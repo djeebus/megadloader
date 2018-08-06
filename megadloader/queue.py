@@ -48,13 +48,21 @@ class DownloadQueue(threading.Thread):
 
         self._find_files(root_node)
 
-        for file, fname in self._files:
-            fpath = os.path.dirname(fname)
-            os.makedirs(fpath, exist_ok=True)
+        while self._files:
+            file, fname = self._files.pop(0)
 
-            file_listener = FileListener(f'download {fname}', self)
-            self.api.startDownload(file, localPath=fname, listener=file_listener)
-            file_listener.wait()
+            try:
+                self._download_file(file, fname)
+            except Exception as e:
+                print(e)
+
+    def _download_file(self, file, fname):
+        fpath = os.path.dirname(fname)
+        os.makedirs(fpath, exist_ok=True)
+
+        file_listener = FileListener(f'download {fname}', self)
+        self.api.startDownload(file, localPath=fname, listener=file_listener)
+        file_listener.wait()
 
     def _find_files(self, node, *directories):
         curdir = node.getName()
