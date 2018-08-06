@@ -18,8 +18,9 @@ setup(
     url="https://github.com/djeebus/megadloader",
 
     install_requires=[
-        'mega',
+        'megasdk',
         'pyramid',
+        'waitress',
     ],
 
     description="megadloader is a demon for download public links from http://mega.co.nz",

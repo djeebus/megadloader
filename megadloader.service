@@ -1,0 +1,12 @@
+[Unit]
+Description=megadloader
+After=network.target
+
+[Service]
+ExecStart=/opt/megadloader/venv/bin/pserve /etc/megadloader.ini
+
+Restart=always
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target
