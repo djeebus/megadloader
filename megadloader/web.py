@@ -10,18 +10,48 @@ from megadloader.queue import DownloadQueue
 def main(global_config, **settings):
     config = pyramid.config.Configurator(settings=settings)
 
-    config.add_route('root', '/')
+    config.include(_queue)
+    config.include(_static)
+    config.include(_api)
+
+    return config.make_wsgi_app()
+
+
+def _api(config: pyramid.config.Configurator):
+    config.add_route('api: status', '/api/status')
     config.add_view(
-        request_method='GET', route_name='root',
-        view=handle_get_root,
+        request_method='GET', route_name='api: status',
+        view=handle_status, renderer='json',
     )
 
+    config.add_route('api: urls', '/api/urls/')
     config.add_view(
-        request_method='POST', route_name='root',
-        view=handle_post_root,
+        request_method='POST', route_name='api: urls',
+        view=handle_add_url, renderer='json',
     )
 
-    queue = DownloadQueue(destination=settings['destination'])
+
+def handle_status(request):
+    queue: DownloadQueue = request.queue
+
+    return {
+        'status': queue.status,
+        'queue': queue.urls,
+        'files': [
+            {'filename': fname, 'filesize': fnode.getSize()}
+            for fnode, fname in queue.files
+        ],
+    }
+
+
+def handle_add_url(request):
+    queue: DownloadQueue = request.queue
+    mega_url = request.POST['mega_url']
+    queue.enqueue(mega_url)
+
+
+def _queue(config: pyramid.config.Configurator):
+    queue = DownloadQueue(destination=config.registry.settings['destination'])
     queue.start()
 
     def bye(*args, **kwargs):
@@ -32,45 +62,21 @@ def main(global_config, **settings):
 
     config.add_request_method(lambda request: queue, 'queue', reify=True)
 
-    return config.make_wsgi_app()
+
+def _static(config: pyramid.config.Configurator):
+    config.add_route('root', '/')
+    config.add_view(
+        request_method='GET', route_name='root',
+        view=handle_get_root,
+    )
 
 
 def handle_get_root(request):
-    queue: DownloadQueue = request.queue
-
-    url_rows = [f'<tr><td>{url}</td></tr>' for url in queue.queue]
-    url_rows = ''.join(url_rows)
-
-    file_rows = [f'<tr><td>{fname}</td></tr>' for fnode, fname in queue._files]
-    file_rows = ''.join(file_rows)
-
     body = f"""
 <html>
 <body>
-    <form method="POST">
-        <input name="mega_url" type="text">
-        <input type="submit">
-    </form>
-    
-    <table>
-        <caption>URL Queue</caption>
-        <thead>
-            <tr><th>Url</th></tr>
-        </thead>
-        <tbody>{url_rows}</tbody>
-    </table>
-    
-    <table>
-        <caption>File Queue</caption>
-        <thead>
-            <tr><th>Filename</th></tr>
-        </thead>
-        <tbody>{file_rows}</tbody>
-    </table>
-    
-    <div>
-        Status: {queue.status}
-    </div>
+    <div id="app"></div>
+    <script src="{request.registry.settings["bundle_url"]}"></script>
 </body>
 </html>
 """
@@ -78,12 +84,3 @@ def handle_get_root(request):
         body=body,
         content_type='text/html',
     )
-
-
-def handle_post_root(request):
-    queue: DownloadQueue = request.queue
-    mega_url = request.POST['mega_url']
-    queue.queue.append(mega_url)
-
-    route_url = request.route_url(route_name='root')
-    raise pyramid.httpexceptions.HTTPFound(location=route_url)

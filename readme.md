@@ -20,3 +20,15 @@ $ python setup.py bdist_wheel
 $ pip install dist/megasdk-*.whl
 
 ```
+
+
+
+API Calls
+=========
+
+GET /api/status 
+- returns the status of the app
+
+POST /api/urls/ 
+mega_url=$SOME_URL
+- sends the url to the backend

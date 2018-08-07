@@ -3,6 +3,8 @@ import os
 import threading
 import time
 
+from megadloader import suppress_errors
+
 
 class DownloadQueue(threading.Thread):
     def __init__(self, destination):
@@ -11,31 +13,41 @@ class DownloadQueue(threading.Thread):
         self.api = mega.MegaApi('vIJE2YwK')
         self.destination = destination
         self.event = threading.Event()
-        self.queue = []
+        self.urls = []
         self.status = 'idle'
-        self._files = []
+        self.files = []
+
+    def enqueue(self, url):
+        self.urls.append(url)
 
     def run(self):
         print('begin queue runner')
         while not self.event.is_set():
             try:
-                url = self.queue.pop(0)
-            except IndexError:
-                time.sleep(.1)
+                url = self.urls.pop(0)
+                print('got a url!')
+                self._process_url(url)
                 continue
+            except IndexError:
+                print('no urls')
 
-            print('got a url!')
             try:
-                print('processing ... ')
-                self._process(url)
-            except Exception as e:
-                print(f'error! {e}')
+                file, fname = self.files.pop(0)
+                print('got a node')
+                self._download_file(file, fname)
+                continue
+            except IndexError:
+                print('no nodes')
+
+            time.sleep(.1)
+
         print('queue runner done')
 
     def stop(self):
         self.event.set()
 
-    def _process(self, url):
+    @suppress_errors
+    def _process_url(self, url):
         listener = LogListener('login to folder')
         self.api.loginToFolder(url, listener)
         listener.wait()
@@ -48,14 +60,7 @@ class DownloadQueue(threading.Thread):
 
         self._find_files(root_node)
 
-        while self._files:
-            file, fname = self._files.pop(0)
-
-            try:
-                self._download_file(file, fname)
-            except Exception as e:
-                print(e)
-
+    @suppress_errors
     def _download_file(self, file, fname):
         fpath = os.path.dirname(fname)
         os.makedirs(fpath, exist_ok=True)
@@ -73,7 +78,7 @@ class DownloadQueue(threading.Thread):
         for index in range(files.size()):
             file: mega.MegaNode = files.get(index)
             fname = os.path.join(self.destination, *directories, curdir, file.getName())
-            self._files.append((file, fname))
+            self.files.append((file, fname))
 
         folders: mega.MegaNodeList = lists.getFolderList()
         for index in range(folders.size()):
@@ -96,19 +101,23 @@ class FileListener(mega.MegaTransferListener):
             self.queue.status = f'{transfer.getFileName()} | {transfer.getTransferredBytes()} / {transfer.getTotalBytes()}'
 
     def onTransferStart(self, api: mega.MegaApi, transfer: mega.MegaTransfer):
+        print('onTransferStart')
         self._update(transfer)
 
     def onTransferFinish(self, api: mega.MegaApi, transfer: mega.MegaTransfer, error: mega.MegaError):
+        print(f'onTransferFinish: {error}')
         self._update(None)
         self.event.set()
 
     def onTransferUpdate(self, api: mega.MegaApi, transfer: mega.MegaTransfer):
+        print('onTransferUpdate')
         self._update(transfer)
 
     def onTransferTemporaryError(self, api: mega.MegaApi, transfer: mega.MegaTransfer, error: mega.MegaError):
-        pass
+        print(f'onTransferTemporaryError: {error}')
 
     def onTransferData(self, api: mega.MegaApi, transfer: mega.MegaTransfer, buffer: str, size: int) -> bool:
+        print('onTransferData')
         return True
 
     def wait(self):
