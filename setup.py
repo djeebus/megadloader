@@ -20,6 +20,7 @@ setup(
     install_requires=[
         'megasdk',
         'pyramid',
+        'sqlalchemy',
         'waitress',
     ],
 

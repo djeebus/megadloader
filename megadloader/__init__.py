@@ -8,7 +8,7 @@ def suppress_errors(func):
     def wrapper(*args, **kwargs):
         try:
             func(*args, **kwargs)
-        except:
+        except Exception as e:
             print('error: %s', e)
 
     return wrapper

@@ -32,3 +32,6 @@ GET /api/status
 POST /api/urls/ 
 mega_url=$SOME_URL
 - sends the url to the backend
+
+DELETE /api/urls/{url_id}
+- deletes a url from the history
