@@ -1,6 +1,7 @@
 import base64
 import functools
 import re
+import threading
 
 
 def suppress_errors(func):
@@ -10,6 +11,25 @@ def suppress_errors(func):
             func(*args, **kwargs)
         except Exception as e:
             print('error: %s', e)
+
+    return wrapper
+
+
+def threadlocal(func):
+    prop_name = func.__name__
+
+    def wrapper(self, *args, **kwargs):
+        try:
+            vals = self.__locals__
+        except AttributeError:
+            vals = self.__locals__ = threading.local()
+
+        try:
+            return getattr(vals, prop_name)
+        except:
+            val = func(self, *args, **kwargs)
+            setattr(vals, prop_name, val)
+            return val
 
     return wrapper
 

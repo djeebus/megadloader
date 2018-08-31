@@ -65,6 +65,16 @@ class File(Base):
     is_finished = Column(Boolean, default=False)
     state = Column(Integer, nullable=True)
 
+    @property
+    def status(self):
+        if self.is_finished:
+            return 'finished'
+
+        if self.is_processing:
+            return 'downloading'
+
+        return 'idle'
+
     def __json__(self, request):
         return {
             'file_id': self.id,
@@ -80,4 +90,5 @@ class File(Base):
             'mean_speed': self.mean_speed,
             'is_finished': self.is_finished,
             'state': self.state,
+            'status': self.status,
         }

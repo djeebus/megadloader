@@ -1,6 +1,8 @@
+import enum
 import pyramid.config
 import pyramid.events
 import pyramid.httpexceptions
+import pyramid.renderers
 import pyramid.response
 import signal
 import uuid
@@ -13,12 +15,33 @@ from megadloader.processor import DownloadProcessor
 def main(global_config, **settings):
     config = pyramid.config.Configurator(settings=settings)
 
-    config.include(_db)
-    config.include(_queue)
-    config.include(_static)
     config.include(_api)
+    config.include(_db)
+    config.include(_log)
+    config.include(_renderers)
+    config.include(_processor)
+    config.include(_static)
 
     return config.make_wsgi_app()
+
+
+def _log(config: pyramid.config.Configurator):
+    config.add_tween('megadloader.web.log_tween_factory')
+
+
+def log_tween_factory(view, registry):
+    def wrap_view(request):
+        print(f'{request.method} {request.path}')
+        response = view(request)
+        print(f'{request.method} {request.path} [{response.status_code}]')
+        return response
+    return wrap_view
+
+
+def _renderers(config: pyramid.config.Configurator):
+    pyramid.renderers.json_renderer_factory.add_adapter(
+        enum.Enum, lambda e, r: e.value,
+    )
 
 
 def _api(config: pyramid.config.Configurator):
@@ -76,12 +99,11 @@ def _db_factory(request):
     return db
 
 
-def _queue(config: pyramid.config.Configurator):
+def _processor(config: pyramid.config.Configurator):
     processor_id = str(uuid.uuid4())[:6]
 
     processor = DownloadProcessor(
         destination=config.registry.settings['destination'],
-        db=Db(),
         processor_id=processor_id,
     )
     processor.start()
@@ -92,8 +114,12 @@ def _queue(config: pyramid.config.Configurator):
 
     signal.signal(signal.SIGINT, bye)
 
-    config.add_request_method(lambda request: processor_id, 'processor_id', reify=True)
-    config.add_request_method(lambda request: processor, 'processor', reify=True)
+    config.add_request_method(
+        lambda request: processor_id, 'processor_id', reify=True,
+    )
+    config.add_request_method(
+        lambda request: processor, 'processor', reify=True,
+    )
 
 
 def _static(config: pyramid.config.Configurator):
@@ -106,14 +132,29 @@ def _static(config: pyramid.config.Configurator):
 
 def handle_status(request):
     db: Db = request.db
-    queue: DownloadProcessor = request.queue
+    processor: DownloadProcessor = request.processor
+
+    file_wrappers = processor.get_files()
+
+    current_file_id = processor.current_file_id
+    files_by_id = {
+        fw.file_model.id: fw.file_model
+        for fw in file_wrappers
+    }
 
     return {
-        'status': queue.status,
-        'urls': db.get_urls(),
-        'files': [
-            {'filename': fname, 'filesize': fnode.getSize()}
-            for fnode, fname in queue.get_files()
+        'status': processor.status,
+        'urls': [
+            {
+                **url.__json__(request),
+                'files': [
+                    {
+                        **file.__json__(request),
+                        'queued': True if file.id in files_by_id else False,
+                        'is_downloading': file.id == current_file_id,
+                    } for file in url.files
+                ],
+            } for url in db.get_urls()
         ],
     }
 
@@ -122,7 +163,9 @@ def handle_add_url(request):
     db: Db = request.db
     mega_url = request.POST['mega_url']
     category = request.POST.get('category')
-    mega_url = decode_url(mega_url)
+    mega_url = decode_url(mega_url) or ''
+    mega_url = mega_url.strip()
+
     if not mega_url:
         request.response.status_code = 400
         return {'code': 'invalid_mega_url'}

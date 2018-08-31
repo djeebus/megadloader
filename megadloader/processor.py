@@ -1,3 +1,5 @@
+import enum
+
 import mega
 import os
 import threading
@@ -5,7 +7,7 @@ import time
 import typing
 import uuid
 
-from megadloader import suppress_errors
+from megadloader import suppress_errors, threadlocal
 from megadloader.db import Db
 from megadloader.models import File, Url, UrlStatus
 
@@ -23,31 +25,56 @@ class NodeWrapper:
         self.file_node = file_node
 
 
+class ProcessorStatus(enum.Enum):
+    IDLE = 'idle'
+    REAPING = 'reaping'
+    SCANNING = 'scanning'
+    INDEXING = 'indexing'
+    DOWNLOADING = 'downloading'
+
+
+def set_status(status):
+    def wrapper(func):
+        def inner(self, *args, **kwargs):
+            self.status = status
+
+            try:
+                return func(self, *args, **kwargs)
+            finally:
+                self.status = ProcessorStatus.IDLE
+
+        return inner
+
+    return wrapper
+
+
 class DownloadProcessor(threading.Thread):
-    def __init__(self, destination, db: Db, processor_id):
+    def __init__(self, destination, processor_id):
         super().__init__(name='DownloadQueueProcessor', daemon=False)
 
         self.api = mega.MegaApi('vIJE2YwK')
-        self.db = db
         self.destination = destination
         self.event = threading.Event()
-        self.status = 'idle'
+        self.status = ProcessorStatus.IDLE
         self.processor_id = processor_id
 
-        self._files = []
+        self.current_file_id = None
+        self._files: typing.List[NodeWrapper] = []
 
-    def get_files(self):
+    @property
+    @threadlocal
+    def db(self):
+        return Db()
+
+    def get_files(self) -> typing.List[NodeWrapper]:
         return self._files
 
-    def _clean_broken_transfers(self):
-        for root, dir, files in os.walk(self.destination):
-            for file in files:
-                if file.endswith('.mega'):
-                    if file.startswith('.getxfer.'):
-                        os.unlink(os.path.join(root, file))
-
     def run(self):
+        self.status = ProcessorStatus.SCANNING
         self._clean_broken_transfers()
+        self._verify_files()
+
+        self.status = ProcessorStatus.IDLE
 
         while not self.event.is_set():
             try:
@@ -60,10 +87,38 @@ class DownloadProcessor(threading.Thread):
 
         self.db.dispose()
 
+    @set_status(ProcessorStatus.REAPING)
+    def _clean_broken_transfers(self):
+        for root, dir, files in os.walk(self.destination):
+            for file in files:
+                if file.endswith('.mega'):
+                    if file.startswith('.getxfer.'):
+                        os.unlink(os.path.join(root, file))
+
+    @set_status(ProcessorStatus.SCANNING)
+    def _verify_files(self):
+        for url in self.db.get_urls():
+            done = True
+
+            for file in url.files:
+                full_path = os.path.join(self.destination, file.path)
+                if os.path.exists(full_path):
+                    continue
+
+                print(f'--- resetting file {file.path}')
+                self.db.reset_file(file)
+                done = False
+
+            if not done:
+                print(f'--- resetting url {url.url} ---')
+                self.db.update_url(url, self.processor_id, UrlStatus.idle)
+
     def _loop(self):
         if self._files:
-            file_wrapper: NodeWrapper = self._files.pop(0)
-            self._download_file(file_wrapper)
+            file = self._files.pop(0)
+            file.current_file_id = file.file_model.id
+            self._download_file(file)
+            file.current_file_id = None
 
             if not self._files:
                 self.db.update_url(
@@ -86,6 +141,7 @@ class DownloadProcessor(threading.Thread):
 
         self.event.set()
 
+    @set_status(ProcessorStatus.INDEXING)
     @suppress_errors
     def _process_url(self, url_model):
         self.db.update_url(url_model, self.processor_id, UrlStatus.processing)
@@ -110,17 +166,17 @@ class DownloadProcessor(threading.Thread):
         dirs = (url_model.category,) if url_model.category else tuple()
         self._find_files(url_model, root_node, *dirs)
 
+    @set_status(ProcessorStatus.DOWNLOADING)
     @suppress_errors
     def _download_file(self, wrapper: NodeWrapper):
         if wrapper.file_model.is_finished:
+            print(f'finished with {wrapper.file_model.path}')
             return
 
         fpath = os.path.dirname(wrapper.path)
         os.makedirs(fpath, exist_ok=True)
 
-        file_listener = FileListener(
-            wrapper.file_model, self, self.db,
-        )
+        file_listener = FileListener(wrapper.file_model.id, self)
 
         self.db.mark_file_status(wrapper.file_model, True)
 
@@ -158,24 +214,37 @@ class DownloadProcessor(threading.Thread):
 
 class FileListener(mega.MegaTransferListener):
     def __init__(
-        self, file_model: File, queue: DownloadProcessor, db: Db,
+        self, file_model_id, queue: DownloadProcessor,
     ):
+        self._vars = threading.local()
+        self.file_model_id = file_model_id
+
         self.event = threading.Event()
-        self.file_model = file_model
-        self.db = db
         self.queue = queue
 
         super().__init__()
 
+    @property
+    @threadlocal
+    def db(self):
+        return Db()
+
+    @property
+    @threadlocal
+    def file_model(self):
+        return self.db.get_file(self.file_model_id)
+
     def _update(self, transfer: typing.Optional[mega.MegaTransfer]):
         self.db.update_file_node(self.file_model, transfer)
 
+    @suppress_errors
     def onTransferStart(
         self, api: mega.MegaApi,
         transfer: mega.MegaTransfer,
     ):
         self._update(transfer)
 
+    @suppress_errors
     def onTransferFinish(
         self, api: mega.MegaApi,
         transfer: mega.MegaTransfer, error: mega.MegaError,
@@ -183,15 +252,18 @@ class FileListener(mega.MegaTransferListener):
         self._update(transfer)
         self.event.set()
 
+    @suppress_errors
     def onTransferUpdate(self, api: mega.MegaApi, transfer: mega.MegaTransfer):
         self._update(transfer)
 
+    @suppress_errors
     def onTransferTemporaryError(
         self, api: mega.MegaApi, transfer: mega.MegaTransfer,
         error: mega.MegaError,
     ):
         pass
 
+    @suppress_errors
     def onTransferData(
         self, api: mega.MegaApi, transfer: mega.MegaTransfer,
         buffer: str, size: int,

@@ -92,7 +92,16 @@ class Db:
         self.session.commit()
         return file_model
 
+    def reset_file(self, file_model: File):
+        file_model.is_processing = False
+        file_model.is_finished = False
+
+        self.session.commit()
+
     def mark_file_status(self, file_model: File, is_processing):
+        if file_model.is_processing == is_processing:
+            return
+
         file_model.is_processing = is_processing
 
         self.session.commit()
