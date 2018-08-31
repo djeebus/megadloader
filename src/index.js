@@ -1,17 +1,16 @@
 import React, {Component} from 'react'
 import ReactDOM from 'react-dom'
 
-export default class App extends Component {
+class App extends Component {
   constructor(props) {
     super(props)
     this.state = {
-      value: "",
-      data: [],
+      url: "",
+      category: "",
       status: {
         urls: []
       }
     }
-    this.onChange = this.onChange.bind(this)
     this.onSubmit = this.onSubmit.bind(this)
 
     this.statusUpdateIntervalId = null
@@ -21,15 +20,16 @@ export default class App extends Component {
       setInterval(this.onTimer.bind(this), 1000)
     }
   }
-  onChange(e) {
-    let value = e.target.value
-    this.setState({
-      value
-    })
-  }
   onSubmit() {
+    const body = new URLSearchParams()
+    body.append('mega_url', this.state.url)
+    const category = this.state.category
+    if (category) {
+      body.append('category', category)
+    }
+
     fetch('/api/urls/', {
-      body: "mega_url=" + this.state.value,
+      body: body,
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -59,7 +59,8 @@ export default class App extends Component {
     return (
       <div>
         <div>
-          <textarea onChange={this.onChange} name="media"/>
+          <textarea name="media" onChange={e => this.setState({url: e.target.value})} />
+          <input name="category" type="text" onChange={e => this.setState({category: e.target.value})} />
           <button onClick={this.onSubmit} type="button">Submit</button>
         </div>
         <div>

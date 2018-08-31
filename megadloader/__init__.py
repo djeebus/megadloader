@@ -61,7 +61,13 @@ def decode_url(url: str):
     m = m_re.search(url)
     k = k_re.search(url)
     if m and k:
-        url = 'https://mega.nz/' + m.group(1) + k.group(1)
+        m = m.group(1)
+        k = k.group(1)
+        if 'mega.nz' not in m:
+            m = 'mega.nz/' + m
+        if '://' not in m:
+            m = 'https://' + m
+        url = m + k
 
     if url.startswith('https://mega'):
         return url
