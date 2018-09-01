@@ -33,11 +33,20 @@ class Url(Base):
                 return UrlStatus.idle
         return self.status
 
+    @property
+    def is_file(self):
+        index = self.url.index('#')
+        if index == -1:
+            return False
+
+        return self.url[index+1] != 'F'
+
     def __json__(self, request):
         status = self.get_status(request.processor_id)
 
         return {
             'id': self.id,
+            'files': [f for f in self.files],
             'status': status,
             'url': self.url,
             'error_msg': self.message,
@@ -82,7 +91,7 @@ class File(Base):
             'path': self.path,
             'total_bytes': self.total_bytes,
             'file_handle': self.file_handle,
-            'is_processing': self.is_processing,
+            'is_downloading': self.is_processing,
 
             'transferred_bytes': self.transferred_bytes,
             'num_retry': self.num_retry,

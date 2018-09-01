@@ -1,7 +1,10 @@
 import base64
 import functools
+import logging
 import re
 import threading
+
+logger = logging.getLogger('megadloader')
 
 
 def suppress_errors(func):
@@ -9,8 +12,8 @@ def suppress_errors(func):
     def wrapper(*args, **kwargs):
         try:
             func(*args, **kwargs)
-        except Exception as e:
-            print('error: %s', e)
+        except:
+            logger.exception('error')
 
     return wrapper
 

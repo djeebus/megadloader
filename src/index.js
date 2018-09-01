@@ -17,7 +17,8 @@ class App extends Component {
   }
   componentWillMount() {
     if (!this.statusUpdateIntervalId) {
-      setInterval(this.onTimer.bind(this), 1000)
+        this.onTimer()
+        this.statusUpdateIntervalId = setInterval(this.onTimer.bind(this), 5000)
     }
   }
   onSubmit() {
@@ -51,6 +52,7 @@ class App extends Component {
 
   componentWillUnmount() {
     clearInterval(this.statusUpdateIntervalId)
+    this.statusUpdateIntervalId = null
   }
 
   render() {
@@ -71,6 +73,10 @@ class App extends Component {
   }
 
   renderUrl(url) {
+    if (url.status == 'DONE') {
+      return (<div>{url.url} [finished]</div>)
+    }
+
     return (
       <div>
         {url.url}
@@ -80,8 +86,17 @@ class App extends Component {
   }
 
   renderFile(file) {
+    if (file.is_finished) {
+      return (<div>{file.path} [finished] </div>)
+    }
+
     return (
-      <div>{file.path} = {file.status}</div>
+      <div>
+        {file.path}
+        <p>{Math.round(file.mean_speed / 1024)} kbps</p>
+        <p>{Math.round((file.transferred_bytes / file.total_bytes) * 100)}% finished</p>
+        <p>is downloading: {file.is_downloading ? "yes" : "no"}</p>
+      </div>
     )
   }
 }

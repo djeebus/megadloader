@@ -33,7 +33,7 @@ class ProcessorStatus(enum.Enum):
     DOWNLOADING = 'downloading'
 
 
-def set_status(status):
+def set_processor_status(status):
     def wrapper(func):
         def inner(self, *args, **kwargs):
             self.status = status
@@ -70,6 +70,8 @@ class DownloadProcessor(threading.Thread):
         return self._files
 
     def run(self):
+        # self.api.fastLogin()
+
         self.status = ProcessorStatus.SCANNING
         self._clean_broken_transfers()
         self._verify_files()
@@ -87,7 +89,7 @@ class DownloadProcessor(threading.Thread):
 
         self.db.dispose()
 
-    @set_status(ProcessorStatus.REAPING)
+    @set_processor_status(ProcessorStatus.REAPING)
     def _clean_broken_transfers(self):
         for root, dir, files in os.walk(self.destination):
             for file in files:
@@ -95,7 +97,7 @@ class DownloadProcessor(threading.Thread):
                     if file.startswith('.getxfer.'):
                         os.unlink(os.path.join(root, file))
 
-    @set_status(ProcessorStatus.SCANNING)
+    @set_processor_status(ProcessorStatus.SCANNING)
     def _verify_files(self):
         for url in self.db.get_urls():
             done = True
@@ -116,7 +118,7 @@ class DownloadProcessor(threading.Thread):
     def _loop(self):
         if self._files:
             file = self._files.pop(0)
-            file.current_file_id = file.file_model.id
+            self.current_file_id = file.file_model.id
             self._download_file(file)
             file.current_file_id = None
 
@@ -141,32 +143,76 @@ class DownloadProcessor(threading.Thread):
 
         self.event.set()
 
-    @set_status(ProcessorStatus.INDEXING)
-    @suppress_errors
-    def _process_url(self, url_model):
-        self.db.update_url(url_model, self.processor_id, UrlStatus.processing)
-
-        listener = LogListener(f'loginToFolder("{url_model.url}")')
-        self.api.loginToFolder(url_model.url, listener)
-        listener.wait()
-
+    def _handle_listener_error(self, url_model, listener):
         if listener.error is not None:
             self.db.update_url(
                 url_model, self.processor_id, UrlStatus.error,
                 str(listener.error),
             )
-            return
+            return True
 
-        listener = LogListener('fetch nodes')
-        self.api.fetchNodes(listener)
-        listener.wait()
+        return False
 
-        root_node = self.api.getRootNode()
+    @set_processor_status(ProcessorStatus.INDEXING)
+    @suppress_errors
+    def _process_url(self, url_model):
+        self.db.update_url(url_model, self.processor_id, UrlStatus.processing)
+
+        if url_model.is_file:
+            listener = PublicFolderListener(f'getPublicNode("{url_model.url}")')
+            self.api.getPublicNode(url_model.url, listener)
+            listener.wait()
+            if self._handle_listener_error(url_model, listener):
+                return
+
+            root_node = listener.public_node
+            processor = self._process_file_node
+        else:
+            listener = LogListener(f'loginToFolder("{url_model.url}")')
+            self.api.loginToFolder(url_model.url, listener)
+            listener.wait()
+            if self._handle_listener_error(url_model, listener):
+                return
+
+            listener = LogListener('fetch nodes')
+            self.api.fetchNodes(listener)
+            listener.wait()
+            if self._handle_listener_error(url_model, listener):
+                return
+
+            root_node = self.api.getRootNode()
+            processor = self._process_folder_node
 
         dirs = (url_model.category,) if url_model.category else tuple()
-        self._find_files(url_model, root_node, *dirs)
+        processor(url_model, root_node, *dirs)
 
-    @set_status(ProcessorStatus.DOWNLOADING)
+    def _process_file_node(self, url_model, node: mega.MegaNode, *directories):
+        fname = os.path.join(
+            self.destination,
+            *directories,
+            node.getName(),
+        )
+
+        file_model = self.db.create_file(url_model, node, fname)
+        wrapper = NodeWrapper(uuid.uuid4(), fname, node, file_model)
+        self._files.append(wrapper)
+
+    def _process_folder_node(self, url_model: Url, dir_node, *directories):
+        curdir = dir_node.getName()
+
+        lists: mega.MegaChildrenLists = self.api.getFileFolderChildren(dir_node)
+
+        files: mega.MegaNodeList = lists.getFileList()
+        for index in range(files.size()):
+            file_node: mega.MegaNode = files.get(index)
+            self._process_file_node(url_model, file_node, *directories, curdir)
+
+        folders: mega.MegaNodeList = lists.getFolderList()
+        for index in range(folders.size()):
+            folder: mega.MegaNode = folders.get(index)
+            self._process_folder_node(url_model, folder, *directories, curdir)
+
+    @set_processor_status(ProcessorStatus.DOWNLOADING)
     @suppress_errors
     def _download_file(self, wrapper: NodeWrapper):
         if wrapper.file_model.is_finished:
@@ -178,38 +224,14 @@ class DownloadProcessor(threading.Thread):
 
         file_listener = FileListener(wrapper.file_model.id, self)
 
-        self.db.mark_file_status(wrapper.file_model, True)
+        self.db.mark_file_status(wrapper.file_model.id, True)
 
         self.api.startDownload(
             wrapper.file_node, localPath=wrapper.path, listener=file_listener,
         )
         file_listener.wait()
 
-        self.db.mark_file_status(wrapper.file_model, False)
-
-    def _find_files(self, url_model: Url, node, *directories):
-        curdir = node.getName()
-
-        lists: mega.MegaChildrenLists = self.api.getFileFolderChildren(node)
-
-        files: mega.MegaNodeList = lists.getFileList()
-        for index in range(files.size()):
-            file_node: mega.MegaNode = files.get(index)
-            fname = os.path.join(
-                self.destination,
-                *directories,
-                curdir,
-                file_node.getName(),
-            )
-
-            file_model = self.db.create_file(url_model, file_node, fname)
-            wrapper = NodeWrapper(uuid.uuid4(), fname, file_node, file_model)
-            self._files.append(wrapper)
-
-        folders: mega.MegaNodeList = lists.getFolderList()
-        for index in range(folders.size()):
-            folder: mega.MegaNode = folders.get(index)
-            self._find_files(url_model, folder, *directories, curdir)
+        self.db.mark_file_status(wrapper.file_model.id, False)
 
 
 class FileListener(mega.MegaTransferListener):
@@ -305,3 +327,16 @@ class LogListener(mega.MegaRequestListener):
 
     def wait(self):
         self.event.wait()
+
+
+class PublicFolderListener(LogListener):
+    public_node = None
+
+    @suppress_errors
+    def onRequestFinish(
+        self, api: mega.MegaApi, request: mega.MegaRequest, e: mega.MegaError,
+    ):
+        if e is None or e.getValue() == e.API_OK:
+            self.public_node = request.getPublicMegaNode()
+
+        super().onRequestFinish(api, request, e)

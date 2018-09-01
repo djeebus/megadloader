@@ -5,7 +5,7 @@
   },
   "scripts": {
     "dev": "webpack-dev-server --mode=development --config webpack.config.js",
-    "build": "webpack --mode production && python setup.py bdist_wheel"
+    "build": "rm dist -r && webpack --mode production --output megadloader/static/app.js && python setup.py bdist_wheel"
   },
   "babel": {
     "presets": [

@@ -5,7 +5,7 @@ setup(
     name="megadloader",
 
     # Version number (initial):
-    version="0.1",
+    version="0.0.5",
 
     # Application author details:
     author="Joe Lombrozo",
@@ -31,4 +31,6 @@ setup(
             'main = megadloader.web:main',
         ],
     },
+
+    include_package_data=True,
 )

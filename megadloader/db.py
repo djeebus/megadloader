@@ -45,7 +45,7 @@ class Db:
 
         return url
 
-    def get_url(self, url_id):
+    def get_url(self, url_id) -> Url:
         url = self.session.query(Url).get(url_id).first()
         if url:
             return url
@@ -98,9 +98,8 @@ class Db:
 
         self.session.commit()
 
-    def mark_file_status(self, file_model: File, is_processing):
-        if file_model.is_processing == is_processing:
-            return
+    def mark_file_status(self, file_id, is_processing):
+        file_model = self.get_file(file_id)
 
         file_model.is_processing = is_processing
 

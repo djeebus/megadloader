@@ -1,4 +1,5 @@
 import enum
+import logging
 import pyramid.config
 import pyramid.events
 import pyramid.httpexceptions
@@ -26,6 +27,8 @@ def main(global_config, **settings):
 
 
 def _log(config: pyramid.config.Configurator):
+    logging.basicConfig()
+
     config.add_tween('megadloader.web.log_tween_factory')
 
 
@@ -123,6 +126,8 @@ def _processor(config: pyramid.config.Configurator):
 
 
 def _static(config: pyramid.config.Configurator):
+    config.add_static_view(name='static', path='megadloader:static/')
+
     config.add_route('root', '/')
     config.add_view(
         request_method='GET', route_name='root',
@@ -134,28 +139,9 @@ def handle_status(request):
     db: Db = request.db
     processor: DownloadProcessor = request.processor
 
-    file_wrappers = processor.get_files()
-
-    current_file_id = processor.current_file_id
-    files_by_id = {
-        fw.file_model.id: fw.file_model
-        for fw in file_wrappers
-    }
-
     return {
         'status': processor.status,
-        'urls': [
-            {
-                **url.__json__(request),
-                'files': [
-                    {
-                        **file.__json__(request),
-                        'queued': True if file.id in files_by_id else False,
-                        'is_downloading': file.id == current_file_id,
-                    } for file in url.files
-                ],
-            } for url in db.get_urls()
-        ],
+        'urls': [url for url in db.get_urls()],
     }
 
 
@@ -183,11 +169,15 @@ def handle_get_urls(request):
 
 
 def handle_get_root(request):
+    bundle_url = request.registry.settings.get("bundle_url")
+    if not bundle_url:
+        bundle_url = '/static/app.js'
+
     body = f"""
 <html>
 <body>
     <div id="app"></div>
-    <script src="{request.registry.settings["bundle_url"]}"></script>
+    <script src="{bundle_url}"></script>
 </body>
 </html>
 """
