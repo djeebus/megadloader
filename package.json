@@ -4,8 +4,9 @@
     "react-dom": "^16.4.2"
   },
   "scripts": {
-    "dev": "webpack-dev-server --mode=development --config webpack.config.js",
-    "build": "rm dist -r && webpack --mode production --output megadloader/static/app.js && python setup.py bdist_wheel"
+    "start": "concurrently --kill-others 'npm run frontend' 'npm run backend'",
+    "frontend": "webpack-dev-server --mode=development --config webpack.config.js",
+    "backend": "docker build . --tag megadloader:current && docker run -p 10101:10101 -v $PWD:/src megadloader:current"
   },
   "babel": {
     "presets": [
@@ -20,6 +21,7 @@
     "babel-preset-env": "^1.7.0",
     "babel-preset-react": "^6.24.1",
     "babel-preset-stage-2": "^6.24.1",
+    "concurrently": "^4.0.1",
     "webpack": "^4.16.5",
     "webpack-cli": "^3.1.0",
     "webpack-dev-server": "^3.1.5"
