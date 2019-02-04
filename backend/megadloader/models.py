@@ -45,7 +45,7 @@ class Url(Base):
         status = self.get_status(request.processor_id)
 
         return {
-            'id': self.id,
+            'queue_id': str(self.id),
             'files': [f for f in self.files],
             'status': status,
             'url': self.url,

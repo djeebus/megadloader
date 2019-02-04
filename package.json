@@ -9,7 +9,7 @@
   },
   "scripts": {
     "frontend": "webpack-dev-server --mode=development --config webpack.config.js",
-    "backend": "docker build . --tag megadloader:current && docker run -p 10101:10101 --mount type=bind,source=%cd%,target=/src megadloader:current"
+    "backend": "docker build . --tag megadloader:current && docker run -p 10101:10101 --mount type=bind,source=`pwd`,target=/src megadloader:current"
   },
   "babel": {
     "presets": [

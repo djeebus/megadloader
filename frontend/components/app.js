@@ -3,6 +3,7 @@ import {connect} from 'react-redux'
 import PropTypes from 'prop-types'
 
 import AddUrl from '../components/addUrl'
+import QueueItem from './queueItem'
 import {refreshQueue} from "../actions";
 
 class App extends Component {
@@ -37,36 +38,8 @@ class App extends Component {
             <div>
                 <AddUrl />
                 <div>
-                    {urls.map(url => (<div key={url.id}>{this.renderUrl(url)}</div>))}
+                    {urls.map(url => (<QueueItem key={url.queue_id} item={url} />))}
                 </div>
-            </div>
-        )
-    }
-
-    renderUrl(url) {
-        if (url.status === 'DONE') {
-            return (<div>{url.url} [finished]</div>)
-        }
-
-        return (
-            <div>
-                {url.url}
-                <ul>{url.files.map(file => (<li key={file.file_id}>{App.renderFile(file)}</li>))}</ul>
-            </div>
-        )
-    }
-
-    static renderFile(file) {
-        if (file.is_finished) {
-            return (<div>{file.path} [finished] </div>)
-        }
-
-        return (
-            <div>
-                {file.path}
-                <p>{Math.round(file.mean_speed / 1024)} kbps</p>
-                <p>{Math.round((file.transferred_bytes / file.total_bytes) * 100)}% finished</p>
-                <p>is downloading: {file.is_downloading ? "yes" : "no"}</p>
             </div>
         )
     }
@@ -75,14 +48,15 @@ class App extends Component {
 const filePropType = PropTypes.shape({
     file_id: PropTypes.isRequired,
     is_finished: PropTypes.bool.isRequired,
-    mean_speed: PropTypes.number.isRequired,
+    mean_speed: PropTypes.number,
     transferred_bytes: PropTypes.number.isRequired,
     is_downloading: PropTypes.bool.isRequired,
 })
 
 const queueItemPropType = PropTypes.shape({
-    url: PropTypes.string.isRequired,
     files: PropTypes.arrayOf(filePropType).isRequired,
+    queue_id: PropTypes.string.isRequired,
+    url: PropTypes.string.isRequired,
 })
 
 App.propTypes = {

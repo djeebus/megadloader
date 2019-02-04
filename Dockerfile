@@ -34,6 +34,7 @@ ADD reqs.txt /src/
 RUN python3.6 -m pip install -r/src/reqs.txt
 
 VOLUME ["/src"]
+VOLUME ["/download"]
 WORKDIR /src
 EXPOSE 10101/tcp
 ENTRYPOINT python3.6 -m pip install -e /src && pserve /src/app.ini --reload

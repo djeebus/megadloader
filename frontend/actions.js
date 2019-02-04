@@ -57,3 +57,24 @@ export function refreshQueue() {
             })
     }
 }
+
+const QUEUE_ITEM_REMOVING = 'QUEUE_ITEM_REMOVING'
+const QUEUE_ITEM_REMOVED = 'QUEUE_ITEM_REMOVED'
+
+export function removeQueueItem(queueId) {
+    return dispatch => {
+        dispatch ({type: QUEUE_ITEM_REMOVING})
+
+        fetch(`/api/queue/${queueId}`, {method: 'DELETE'})
+            .then(res => res.json())
+            .then(response => {
+                dispatch({
+                    type: QUEUE_ITEM_REMOVED,
+                    data: response,
+                })
+
+                const queueRefresher = refreshQueue()
+                queueRefresher(dispatch)
+            })
+    }
+}

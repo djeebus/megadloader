@@ -1,4 +1,5 @@
 module.exports = {
+    entry: './frontend/index.js',
     module: {
         rules: [
             {

@@ -229,6 +229,7 @@ class DownloadProcessor(threading.Thread):
         self.api.startDownload(
             wrapper.file_node, localPath=wrapper.path, listener=file_listener,
         )
+
         file_listener.wait()
 
         self.db.mark_file_status(wrapper.file_model.id, False)
@@ -257,7 +258,12 @@ class FileListener(mega.MegaTransferListener):
         return self.db.get_file(self.file_model_id)
 
     def _update(self, transfer: typing.Optional[mega.MegaTransfer]):
-        self.db.update_file_node(self.file_model, transfer)
+        file_model = self.file_model
+        if file_model is None:
+            self.queue.api.cancelTransfer(transfer, LogListener('cancelTransfer'))
+            return
+
+        self.db.update_file_node(file_model, transfer)
 
     @suppress_errors
     def onTransferStart(

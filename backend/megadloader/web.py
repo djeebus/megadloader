@@ -64,9 +64,9 @@ def _api(config: pyramid.config.Configurator):
         view=handle_add_url, renderer='json',
     )
 
-    config.add_route('api: url', '/api/urls/{url_id}')
+    config.add_route('api: queue items', '/api/queue/{queue_id}')
     config.add_view(
-        request_method='DELETE', route_name='api: url',
+        request_method='DELETE', route_name='api: queue items',
         view=handle_delete_url, renderer='json',
     )
 
@@ -211,7 +211,7 @@ def handle_delete_url(request):
     db: Db = request.db
     processor: DownloadProcessor = request.processor
 
-    url_id = request.matchdict['url_id']
+    url_id = request.matchdict['queue_id']
     url_model = db.get_url(url_id)
     if not url_model:
         request.response.status_code = 404

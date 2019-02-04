@@ -46,7 +46,7 @@ class Db:
         return url
 
     def get_url(self, url_id) -> Url:
-        url = self.session.query(Url).get(url_id).first()
+        url = self.session.query(Url).get(url_id)
         if url:
             return url
 

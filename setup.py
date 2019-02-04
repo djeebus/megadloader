@@ -13,6 +13,7 @@ setup(
 
     # Packages
     packages=["megadloader"],
+    package_dir={'': 'backend'},
 
     # Details
     url="https://github.com/djeebus/megadloader",
