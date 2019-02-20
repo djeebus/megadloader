@@ -78,3 +78,42 @@ export function removeQueueItem(queueId) {
             })
     }
 }
+
+export const CATEGORIES_REFRESHING = 'CATEGORIES_REFRESHING'
+export const CATEGORIES_REFRESHED = 'CATEGORIES_REFRESHED'
+
+export function refreshCategories() {
+    return dispatch => {
+        dispatch({type: CATEGORIES_REFRESHING})
+
+        fetch('/api/categories/')
+            .then(res => res.json())
+            .then(response => {
+                dispatch({
+                    type: CATEGORIES_REFRESHED,
+                    items: response,
+                })
+            })
+    }
+}
+
+export const ADDING_CATEGORY = 'ADDING_CATEGORY'
+export const ADDED_CATEGORY = 'ADDED_CATEGORY'
+
+export function addCategory(name) {
+    return dispatch => {
+        dispatch({type: ADDING_CATEGORY})
+
+        fetch('/api/categories/', {
+            method: 'POST',
+            body: JSON.stringify({name}),
+        })
+            .then(res => res.json())
+            .then(response => {
+                dispatch({
+                    type: ADDED_CATEGORY,
+                    category: response,
+                })
+            })
+    }
+}

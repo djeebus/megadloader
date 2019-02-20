@@ -1,7 +1,7 @@
 import enum
 import sqlalchemy.ext.declarative
 
-from sqlalchemy import Column, Integer, String, Boolean, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Text, ForeignKey, BigInteger
 from sqlalchemy.orm import relationship
 
 Base = sqlalchemy.ext.declarative.declarative_base()
@@ -58,19 +58,19 @@ class Url(Base):
 class File(Base):
     __tablename__ = 'files'
 
-    id = Column(sqlalchemy.Integer, primary_key=True)
-    url_id = Column(sqlalchemy.Integer, ForeignKey('urls.id'))
+    id = Column(Integer, primary_key=True)
+    url_id = Column(Integer, ForeignKey('urls.id'))
     url = relationship('Url', back_populates='files')
     path = Column(String(1024), nullable=False)
     file_handle = Column(String(1024), nullable=False)
 
     is_processing = Column(Boolean, default=False)
 
-    total_bytes = Column(sqlalchemy.BigInteger, nullable=False)
-    transferred_bytes = Column(sqlalchemy.BigInteger, default=0)
-    num_retry = Column(sqlalchemy.Integer, nullable=True)
-    max_retries = Column(sqlalchemy.Integer, nullable=True)
-    mean_speed = Column(sqlalchemy.BigInteger, nullable=True)
+    total_bytes = Column(BigInteger, nullable=False)
+    transferred_bytes = Column(BigInteger, default=0)
+    num_retry = Column(Integer, nullable=True)
+    max_retries = Column(Integer, nullable=True)
+    mean_speed = Column(BigInteger, nullable=True)
     is_finished = Column(Boolean, default=False)
     state = Column(Integer, nullable=True)
 
@@ -100,4 +100,17 @@ class File(Base):
             'is_finished': self.is_finished,
             'state': self.state,
             'status': self.status,
+        }
+
+
+class Category(Base):
+    __tablename__ = 'categories'
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(1024))
+
+    def __json__(self, request):
+        return {
+            'category_id': self.id,
+            'name': self.name,
         }

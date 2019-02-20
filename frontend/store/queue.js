@@ -5,7 +5,7 @@ const initialState = {
     items: [],
 }
 
-function queue(state = initialState, action) {
+export default function queue(state = initialState, action) {
     switch (action.type) {
         case QUEUE_REFRESHING:
             return {
@@ -23,5 +23,3 @@ function queue(state = initialState, action) {
             return state
     }
 }
-
-export default queue

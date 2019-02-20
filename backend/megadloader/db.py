@@ -4,7 +4,7 @@ import sqlalchemy.ext.declarative
 import sqlalchemy.orm
 import typing
 
-from megadloader.models import Base, Url, UrlStatus, File
+from megadloader.models import Base, Url, UrlStatus, File, Category
 
 DBSession = sqlalchemy.orm.scoped_session(
     sqlalchemy.orm.sessionmaker(),
@@ -128,6 +128,19 @@ class Db:
         file_model = self.session.query(File).get(file_id)
         if file_model:
             return file_model
+
+    def create_category(self, *, name):
+        category = Category(
+            name=name,
+        )
+        self.session.add(category)
+        self.session.commit()
+        return category
+
+    def list_categories(self):
+        q = self.session.query(Category)
+        categories = q.all()
+        return categories
 
 
 class NotFoundError(Exception):

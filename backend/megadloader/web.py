@@ -54,6 +54,16 @@ def _api(config: pyramid.config.Configurator):
         view=handle_status, renderer='json',
     )
 
+    config.add_route('api: categories', '/api/categories/')
+    config.add_view(
+        request_method='GET', route_name='api: categories',
+        view=handle_list_categories, renderer='json',
+    )
+    config.add_view(
+        request_method='POST', route_name='api: categories',
+        view=handle_create_category, renderer='json',
+    )
+
     config.add_route('api: urls', '/api/urls/')
     config.add_view(
         request_method='GET', route_name='api: urls',
@@ -223,3 +233,19 @@ def handle_delete_url(request):
 
     db.delete_url(url_model)
     return {'code': 'ok'}
+
+
+def handle_list_categories(request):
+    db: Db = request.db
+
+    categories = db.list_categories()
+    return categories
+
+
+def handle_create_category(request):
+    db: Db = request.db
+    payload = request.json
+
+    category = db.create_category(**payload)
+
+    return category

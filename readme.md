@@ -11,12 +11,16 @@ API Calls
 GET /api/status
 - returns the status of the app
 
-POST /api/urls/
-mega_url=$SOME_URL
+POST /api/urls/ {mega_url}
 - sends the url to the backend
 
 DELETE /api/urls/{url_id}
 - deletes a url from the history
+
+GET /api/categories/
+- get a list of categories supported by the server
+
+POST /api/categories/ {name}
 
 
 Install mega-sdk locally

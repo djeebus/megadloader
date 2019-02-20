@@ -2,17 +2,18 @@ import React, { Component } from "react";
 import {connect} from 'react-redux'
 import PropTypes from 'prop-types'
 
+import AddCategory from '../components/addCategory'
 import AddUrl from '../components/addUrl'
 import QueueItem from './queueItem'
-import {refreshQueue} from "../actions";
+import {refreshCategories, refreshQueue} from "../actions";
 
 class App extends Component {
     constructor(props) {
         super(props)
         this.state = {
             status: {
-                urls: []
-            }
+                urls: [],
+            },
         }
 
         this.statusUpdateIntervalId = null
@@ -27,6 +28,10 @@ class App extends Component {
         }
     }
 
+    componentDidMount() {
+        this.props.onLoad()
+    }
+
     componentWillUnmount() {
         clearInterval(this.statusUpdateIntervalId)
         this.statusUpdateIntervalId = null
@@ -37,6 +42,7 @@ class App extends Component {
         return (
             <div>
                 <AddUrl />
+                <AddCategory />
                 <div>
                     {urls.map(url => (<QueueItem key={url.queue_id} item={url} />))}
                 </div>
@@ -65,11 +71,17 @@ App.propTypes = {
 }
 
 function mapStateToProps(state) {
-    return {queue: state.queue.items}
+    return {
+        categories: state.categories,
+        queue: state.queue.items,
+    }
 }
 
 function mapDispatchToProps(dispatch) {
-    return {onTimer: () => dispatch(refreshQueue())}
+    return {
+        onLoad: () => dispatch(refreshCategories()),
+        onTimer: () => dispatch(refreshQueue()),
+    }
 }
 
 export default connect(mapStateToProps, mapDispatchToProps)(App)

@@ -10,13 +10,35 @@ class AddUrl extends Component {
             url: "",
             category: "",
         }
+
+        this.onSelectCategory = this.onSelectCategory.bind(this)
+    }
+
+    onSelectCategory(e) {
+        if (e.target == null) {
+            this.setState({category: ''})
+            return;
+        }
+
+        this.setState({category: e.target.value})
     }
 
     render() {
         return (
             <div>
-                <div>URL: <textarea name="media" onChange={e => this.setState({url: e.target.value})} /></div>
-                <div>Category: <input name="category" type="text" onChange={e => this.setState({category: e.target.value})} /></div>
+                <div>
+                    URL:
+                    <textarea name="media" onChange={e => this.setState({url: e.target.value})} />
+                </div>
+                <div>
+                    Category:
+                    <select onChange={this.onSelectCategory}>
+                        <option/>
+                        {this.props.categories.map((c) => (
+                            <option key={c.category_id} value={c.name}>{c.name}</option>
+                        ))}
+                    </select>
+                </div>
                 <button onClick={() => this.props.onSubmit(this.state.url, this.state.category)} type="button">Submit</button>
             </div>
         )
@@ -24,7 +46,10 @@ class AddUrl extends Component {
 }
 
 function mapStateToProps(state) {
-    return {queue: state.queue.items}
+    return {
+        categories: state.categories.items,
+        queue: state.queue.items,
+    }
 }
 
 function mapDispatchToProps(dispatch) {
