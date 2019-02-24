@@ -10,11 +10,11 @@ fi
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 
-# build backend assets
-cd ${DIR}/.. && VERSION=${VERSION} python setup.py bdist_wheel
-
 # build frontend assets
 cd ${DIR}/../ && yarn run build:release
+
+# build backend assets
+cd ${DIR}/.. && VERSION=${VERSION} python3.6 setup.py bdist_wheel
 
 # copy backend reqs
 cp ${DIR}/../reqs.txt ${DIR}/app.ini ${DIR}/../dist/
@@ -22,4 +22,7 @@ cp ${DIR}/../reqs.txt ${DIR}/app.ini ${DIR}/../dist/
 docker build ${DIR}/../dist/ \
     --file ${DIR}/Dockerfile \
     --build-arg VERSION=${VERSION} \
-    --tag djeebus/megadloader:${VERSION}
+    --tag djeebus/megadloader:${VERSION} \
+    --tag djeebus/megadloader:latest
+
+echo "now run \"docker push djeebus/megadloader:${VERSION}\""

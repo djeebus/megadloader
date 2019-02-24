@@ -1,1 +1,2 @@
-include megadloader/static/app.js
+recursive-include backend/megadloader/static *.js *.html
+

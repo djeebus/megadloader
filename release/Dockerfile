@@ -89,8 +89,10 @@ ADD app.ini /config/
 
 RUN rm /wheels -r
 
-VOLUME ["/data"]
+RUN mkdir /data
 
-EXPOSE 10101/tcp
+VOLUME ["/data", "/config"]
+
+EXPOSE 80/tcp
 
 ENTRYPOINT ["/usr/bin/pserve", "/config/app.ini"]
