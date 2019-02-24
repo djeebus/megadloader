@@ -22,4 +22,4 @@ cp ${DIR}/../reqs.txt ${DIR}/app.ini ${DIR}/../dist/
 docker build ${DIR}/../dist/ \
     --file ${DIR}/Dockerfile \
     --build-arg VERSION=${VERSION} \
-    --tag megadloader:${VERSION}
+    --tag djeebus/megadloader:${VERSION}
