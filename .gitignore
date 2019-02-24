@@ -1,9 +1,11 @@
 *.egg-info
-/node_modules
 __pycache__
+
 /.pytest_cache
-/downloads
-/megadloader.db
+/backend/megadloader/static
 /build
 /dist
+/downloads
+/megadloader.db
+/node_modules
 /sdk

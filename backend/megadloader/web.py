@@ -5,6 +5,7 @@ import pyramid.events
 import pyramid.httpexceptions
 import pyramid.renderers
 import pyramid.response
+import pyramid.static
 import signal
 import uuid
 
@@ -17,6 +18,7 @@ def main(global_config, **settings):
     config = pyramid.config.Configurator(settings=settings)
 
     config.include(_api)
+    config.include(_cors)
     config.include(_db)
     config.include(_log)
     config.include(_renderers)
@@ -24,6 +26,27 @@ def main(global_config, **settings):
     config.include(_static)
 
     return config.make_wsgi_app()
+
+
+def _cors(config: pyramid.config.Configurator):
+    config.add_tween('megadloader.web.cors_tween_factory')
+
+
+def cors_tween_factory(handler, registry):
+    cors_domain = registry.settings.get('cors_domain')
+    if not cors_domain:
+        return handler
+
+    def tween(request):
+        response = handler(request)
+
+        response.headerlist.extend([
+            ('Access-Control-Allow-Origin', cors_domain),
+        ])
+
+        return response
+
+    return tween
 
 
 def _log(config: pyramid.config.Configurator):
@@ -136,12 +159,13 @@ def _processor(config: pyramid.config.Configurator):
 
 
 def _static(config: pyramid.config.Configurator):
-    config.add_static_view(name='static', path='megadloader:static/')
-
-    config.add_route('root', '/')
+    config.add_route(name='index', path='/*subpath')
     config.add_view(
-        request_method='GET', route_name='root',
-        view=handle_get_root,
+        request_method='GET', route_name='index',
+        view=pyramid.static.static_view(
+            root_dir='megadloader:static/',
+            package_name='megadloader:static',
+        ),
     )
 
 
@@ -176,25 +200,6 @@ def handle_get_urls(request):
 
     urls = db.get_urls()
     return urls
-
-
-def handle_get_root(request):
-    bundle_url = request.registry.settings.get("bundle_url")
-    if not bundle_url:
-        bundle_url = '/static/app.js'
-
-    body = f"""
-<html>
-<body>
-    <div id="app"></div>
-    <script src="{bundle_url}"></script>
-</body>
-</html>
-"""
-    return pyramid.response.Response(
-        body=body,
-        content_type='text/html',
-    )
 
 
 def handle_list_files(request):

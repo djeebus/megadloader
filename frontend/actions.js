@@ -1,3 +1,5 @@
+const API_ROOT = process.env.API_ROOT || ''
+
 export function addMegaLink(megaUrl, category) {
     return dispatch => {
         const body = new URLSearchParams()
@@ -7,7 +9,7 @@ export function addMegaLink(megaUrl, category) {
             body.append('category', category)
         }
 
-        fetch('/api/urls/', {
+        fetch(`${API_ROOT}/api/urls/`, {
             body: body,
             method: 'POST',
             headers: {'Content-Type': 'application/x-www-form-urlencoded'}
@@ -47,7 +49,7 @@ export function refreshQueue() {
     return dispatch => {
         dispatch({type: QUEUE_REFRESHING})
 
-        fetch('/api/status')
+        fetch(`${API_ROOT}/api/status`)
             .then(res => res.json())
             .then(response => {
                 dispatch({
@@ -65,7 +67,7 @@ export function removeQueueItem(queueId) {
     return dispatch => {
         dispatch ({type: QUEUE_ITEM_REMOVING})
 
-        fetch(`/api/queue/${queueId}`, {method: 'DELETE'})
+        fetch(`${API_ROOT}/api/queue/${queueId}`, {method: 'DELETE'})
             .then(res => res.json())
             .then(response => {
                 dispatch({
@@ -86,7 +88,7 @@ export function refreshCategories() {
     return dispatch => {
         dispatch({type: CATEGORIES_REFRESHING})
 
-        fetch('/api/categories/')
+        fetch(`${API_ROOT}/api/categories/`)
             .then(res => res.json())
             .then(response => {
                 dispatch({
@@ -104,7 +106,7 @@ export function addCategory(name) {
     return dispatch => {
         dispatch({type: ADDING_CATEGORY})
 
-        fetch('/api/categories/', {
+        fetch(`${API_ROOT}/api/categories/`, {
             method: 'POST',
             body: JSON.stringify({name}),
         })

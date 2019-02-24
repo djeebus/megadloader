@@ -8,8 +8,10 @@
     "redux-thunk": "^2.3.0"
   },
   "scripts": {
-    "frontend": "webpack-dev-server --mode=development --config webpack.config.js",
-    "backend": "docker build . --tag megadloader:current && docker run -p 10101:10101 --mount type=bind,source=`pwd`,target=/src megadloader:current"
+    "frontend": "webpack-dev-server --mode=development --config webpack.config.js --env.API_ROOT=http://localhost:10101",
+    "build:release": "webpack --config webpack.config.js -p --output-path ./backend/megadloader/static/",
+    "backend": "docker build . --tag megadloader:current && docker run -p 10101:10101 --mount type=bind,source=`pwd`,target=/src megadloader:current",
+    "release": "./release/build.sh"
   },
   "babel": {
     "presets": [
@@ -25,6 +27,7 @@
     "babel-preset-react": "^6.24.1",
     "babel-preset-stage-2": "^6.24.1",
     "concurrently": "^4.0.1",
+    "html-webpack-plugin": "^3.2.0",
     "webpack": "^4.16.5",
     "webpack-cli": "^3.1.0",
     "webpack-dev-server": "^3.1.5"
