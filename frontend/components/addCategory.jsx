@@ -1,6 +1,6 @@
-import React, {Component} from 'react'
-import {connect} from 'react-redux'
-import {addCategory} from "../actions";
+import React, { Component } from 'react'
+import { connect } from 'react-redux'
+import { addCategory } from "../actions";
 
 class AddCategory extends Component {
     constructor(props) {
@@ -11,7 +11,7 @@ class AddCategory extends Component {
     }
 
     onCategoryChange(e) {
-        this.setState({text: e.target.value})
+        this.setState({ text: e.target.value })
     }
 
     onSubmit() {
@@ -34,7 +34,7 @@ function mapStateToProps(state) {
 }
 
 function mapDispatchToProps(dispatch) {
-    return {onSubmit: (name) => dispatch(addCategory(name))}
+    return { onSubmit: (name) => dispatch(addCategory(name)) }
 }
 
 export default connect(mapStateToProps, mapDispatchToProps)(AddCategory)

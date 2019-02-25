@@ -1,0 +1,61 @@
+stages:
+  - stage-1
+  - stage-2
+  - stage-3
+  - release
+
+before_script:
+  - export VERSION=$(cat ./VERSION)
+
+frontend:
+  stage: stage-1
+  script:
+    - curl -o- -L https://yarnpkg.com/install.sh | bash
+    - yarn install
+    - yarn run eslint frontend/
+    - webpack --config webpack.config.js -p --output-path ./backend/megadloader/static/ --env.API_ROOT=
+  artifacts:
+    paths:
+      - dist/*.html
+      - dist/*.js
+
+backend:flake8:
+  stage: stage-1
+  script:
+    - python3.6 -m venv .env && . .env/bin/activate
+    - python3.6 -m pip install --upgrade pip setuptools wheel
+    - python3.6 -m pip install flake8
+    - flake8 backend/eventray/
+
+backend:bdist:
+  stage: stage-2
+  dependencies:
+    - frontend
+  script:
+    - python3.6 -m venv .env && . .env/bin/activate
+    - python3.6 -m pip install --upgrade pip setuptools wheel
+    - python3.6 setup.py bdist_wheel
+
+    - python3.6 -m pip install dist/*.whl py.test
+    - py.test tests/
+
+    - cp release/app.ini reqs.txt dist/
+    - >
+      docker build dist/
+        --file release/Dockerfile
+        --build-arg VERSION=${VERSION}
+        --tag djeebus/megadloader:${VERSION}
+        --tag djeebus/megadloader:latest
+    - mkdir container && docker save djeebus/megadloader:${VERSION} > container/app.tar
+  artifacts:
+    paths:
+      - container/
+
+release:
+  stage: release
+  dependencies:
+    - backend:bdist
+  script:
+    - docker load -i container/app.tar
+    - docker push djeebus/megadloader:${VERSION}
+  when: manual

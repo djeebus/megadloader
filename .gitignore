@@ -4,6 +4,7 @@ __pycache__
 /.pytest_cache
 /backend/megadloader/static
 /build
+/builds
 /dist
 /downloads
 /megadloader.db
