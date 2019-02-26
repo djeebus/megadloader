@@ -54,7 +54,7 @@ build:wheel:
     # - py.test tests/
   artifacts:
     paths:
-      - dist/megadloader-${VERSION}-py3-none-any.whl
+      - dist/*.whl
 
 .docker:
   image: docker:latest
