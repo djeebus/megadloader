@@ -5,8 +5,6 @@ import { Provider } from 'react-redux'
 import App from './components/app'
 import store from './store'
 
-
-
 const rootElement = document.getElementById('app')
 
 ReactDOM.render(
