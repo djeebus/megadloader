@@ -60,8 +60,6 @@ build:wheel:
     DOCKER_DRIVER: overlay2
   services:
     - docker:dind
-  before_script:
-    - docker info
   tags:
     - docker
 
