@@ -53,17 +53,30 @@ build:wheel:
     # - python3.6 -m pip install dist/*.whl pytest
     # - py.test tests/
 
+.docker:
+  image: docker:latest
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_DRIVER: overlay2
+  services:
+    - docker:dind
+  before_script:
+    - docker info
+  tags:
+    - docker
+
 build:container:
   stage: stage-3
+  extends: .docker
   dependencies:
     - build:wheel
   script:
     - mkdir -p dist/ && cp release/app.ini reqs.txt dist/
     - >
-      docker build dist/
-        --file release/Dockerfile
-        --build-arg VERSION=${VERSION}
-        --tag djeebus/megadloader:${VERSION}
+      docker build dist/ \
+        --file release/Dockerfile \
+        --build-arg VERSION=${VERSION} \
+        --tag djeebus/megadloader:${VERSION} \
         --tag djeebus/megadloader:latest
     - mkdir container && docker save djeebus/megadloader:${VERSION} > container/app.tar
   artifacts:
@@ -72,6 +85,7 @@ build:container:
 
 release:
   stage: release
+  extends: .docker
   dependencies:
     - build:container
   script:
