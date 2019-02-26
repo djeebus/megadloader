@@ -5,7 +5,7 @@ stages:
   - release
 
 before_script:
-  - export VERSION=$(cat ./VERSION)
+  - export VERSION=$(cat ./VERSION | tr -d '\n\r')
 
 frontend:
   stage: stage-1
@@ -52,6 +52,9 @@ build:wheel:
     # have to compile mega sdk, don't wanna just yet
     # - python3.6 -m pip install dist/*.whl pytest
     # - py.test tests/
+  artifacts:
+    paths:
+      - dist/megadloader-${VERSION}-py3-none-any.whl
 
 .docker:
   image: docker:latest
