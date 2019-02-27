@@ -7,6 +7,9 @@ stages:
 before_script:
   - export VERSION=$(cat ./VERSION | tr -d '\n\r')
 
+variables:
+  IMAGE_TAG: $CI_REGISTRY/megadloader:${VERSION}
+
 frontend:
   stage: stage-1
   image: ubuntu:18.04
@@ -77,9 +80,8 @@ build:container:
       docker build dist/ \
         --file release/Dockerfile \
         --build-arg VERSION=${VERSION} \
-        --tag djeebus/megadloader:${VERSION} \
-        --tag djeebus/megadloader:latest
-    - mkdir container && docker save djeebus/megadloader:${VERSION} > container/app.tar
+        --tag $IMAGE_TAG
+    - mkdir container && docker save $IMAGE_TAG > container/app.tar
   artifacts:
     paths:
       - container/
@@ -90,6 +92,7 @@ release:
   dependencies:
     - build:container
   script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
     - docker load -i container/app.tar
-    - docker push djeebus/megadloader:${VERSION}
+    - docker push $IMAGE_TAG
   when: manual
