@@ -1,7 +1,15 @@
 import enum
 import sqlalchemy.ext.declarative
 
-from sqlalchemy import Column, Integer, String, Boolean, Text, ForeignKey, BigInteger
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Column,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+)
 from sqlalchemy.orm import relationship
 
 Base = sqlalchemy.ext.declarative.declarative_base()
@@ -39,7 +47,7 @@ class Url(Base):
         if index == -1:
             return False
 
-        return self.url[index+1] != 'F'
+        return self.url[index + 1] != 'F'
 
     def __json__(self, request):
         status = self.get_status(request.processor_id)

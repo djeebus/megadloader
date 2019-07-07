@@ -1,0 +1,98 @@
+stages:
+  - stage-1
+  - stage-2
+  - stage-3
+  - release
+
+before_script:
+  - export VERSION=$(cat ./VERSION | tr -d '\n\r')
+
+variables:
+  IMAGE_TAG: $CI_REGISTRY/megadloader:${VERSION}
+
+frontend:
+  stage: stage-1
+  image: ubuntu:18.04
+  script:
+    - apt update && apt install -y curl gnupg2
+    - curl -sL https://deb.nodesource.com/setup_10.x | bash -
+    - apt update && apt install -y nodejs
+    - curl -o- -L https://yarnpkg.com/install.sh | bash
+    - ~/.yarn/bin/yarn
+    - ~/.yarn/bin/yarn run eslint frontend/
+    - >
+      ~/.yarn/bin/yarn webpack \
+        --config webpack.config.js \
+        --mode production \
+        --optimize-minimize \
+        --env.NODE_ENV="production" \
+        --env.API_ROOT="" \
+        --output-path ./backend/megadloader/static/
+  artifacts:
+    paths:
+      - backend/megadloader/static/
+
+backend:flake8:
+  stage: stage-1
+  image: ubuntu:18.04
+  script:
+    - apt update && apt install -y python3.6 python3-pip
+    - python3.6 -m venv .env && . .env/bin/activate
+    - python3.6 -m pip install --upgrade pip setuptools wheel flake8
+    - flake8 backend/ --ignore E722
+
+build:wheel:
+  stage: stage-2
+  image: ubuntu:18.04
+  dependencies:
+    - frontend
+  script:
+    - apt update && apt install -y python3.6 python3-pip
+    - python3.6 -m venv .env && . .env/bin/activate
+    - python3.6 -m pip install --upgrade pip setuptools wheel
+    - python3.6 setup.py bdist_wheel
+
+    # have to compile mega sdk, don't wanna just yet
+    # - python3.6 -m pip install dist/*.whl pytest
+    # - py.test tests/
+  artifacts:
+    paths:
+      - dist/*.whl
+
+.docker:
+  image: docker:latest
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_DRIVER: overlay2
+  services:
+    - docker:dind
+  tags:
+    - docker
+
+build:container:
+  stage: stage-3
+  extends: .docker
+  dependencies:
+    - build:wheel
+  script:
+    - mkdir -p dist/ && cp release/app.ini reqs.txt dist/
+    - >
+      docker build dist/ \
+        --file release/Dockerfile \
+        --build-arg VERSION=${VERSION} \
+        --tag $IMAGE_TAG
+    - mkdir container && docker save $IMAGE_TAG > container/app.tar
+  artifacts:
+    paths:
+      - container/
+
+release:
+  stage: release
+  extends: .docker
+  dependencies:
+    - build:container
+  script:
+    - docker login -u gitlab-ci-token -p $CI_JOB_TOKEN $CI_REGISTRY
+    - docker load -i container/app.tar
+    - docker push $IMAGE_TAG
+  when: manual

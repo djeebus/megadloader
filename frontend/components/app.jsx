@@ -1,11 +1,11 @@
 import React, { Component } from "react";
-import {connect} from 'react-redux'
+import { connect } from 'react-redux'
 import PropTypes from 'prop-types'
 
 import AddCategory from '../components/addCategory'
 import AddUrl from '../components/addUrl'
 import QueueItem from './queueItem'
-import {refreshCategories, refreshQueue} from "../actions";
+import { refreshCategories, refreshQueue } from "../actions";
 
 class App extends Component {
     constructor(props) {

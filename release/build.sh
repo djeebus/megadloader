@@ -2,7 +2,7 @@
 
 set -e
 
-VERSION=$1
+VERSION=${1:-$VERSION}
 if [[ -z ${VERSION} ]]; then
     echo "usage: $0 VERSION"
     exit 0

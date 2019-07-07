@@ -159,7 +159,9 @@ class DownloadProcessor(threading.Thread):
         self.db.update_url(url_model, self.processor_id, UrlStatus.processing)
 
         if url_model.is_file:
-            listener = PublicFolderListener(f'getPublicNode("{url_model.url}")')
+            listener = PublicFolderListener(
+                f'getPublicNode("{url_model.url}")',
+            )
             self.api.getPublicNode(url_model.url, listener)
             listener.wait()
             if self._handle_listener_error(url_model, listener):
@@ -200,7 +202,8 @@ class DownloadProcessor(threading.Thread):
     def _process_folder_node(self, url_model: Url, dir_node, *directories):
         curdir = dir_node.getName()
 
-        lists: mega.MegaChildrenLists = self.api.getFileFolderChildren(dir_node)
+        lists: mega.MegaChildrenLists = \
+            self.api.getFileFolderChildren(dir_node)
 
         files: mega.MegaNodeList = lists.getFileList()
         for index in range(files.size()):
@@ -260,7 +263,9 @@ class FileListener(mega.MegaTransferListener):
     def _update(self, transfer: typing.Optional[mega.MegaTransfer]):
         file_model = self.file_model
         if file_model is None:
-            self.queue.api.cancelTransfer(transfer, LogListener('cancelTransfer'))
+            self.queue.api.cancelTransfer(
+                transfer, LogListener('cancelTransfer'),
+            )
             return
 
         self.db.update_file_node(file_model, transfer)

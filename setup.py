@@ -1,14 +1,12 @@
 import os
 from setuptools import setup
 
-VERSION = os.getenv('VERSION', '0.0.0')
-
 setup(
     # Application name:
     name="megadloader",
 
     # Version number (initial):
-    version=VERSION,
+    version=open('VERSION').read(),
 
     # Application author details:
     author="Joe Lombrozo",
