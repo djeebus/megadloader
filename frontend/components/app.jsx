@@ -42,7 +42,9 @@ class App extends Component {
         return (
             <div>
                 <AddUrl />
+                <hr />
                 <AddCategory />
+                <hr />
                 <div>
                     {urls.map(url => (<QueueItem key={url.queue_id} item={url} />))}
                 </div>

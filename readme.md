@@ -29,12 +29,12 @@ Install mega-sdk locally
 ```bash
 $ sudo apt install \
     swig libfreeimage-dev libcurl4-openssl-dev libc-ares-dev libsqlite3-dev \
-    libsodium-dev libcrypto++-dev libtool libssl-dev python3.6-dev \
+    libsodium-dev libcrypto++-dev libtool libssl-dev python3.7-dev \
     python3-wheel
 $ git clone https://github.com/meganz/sdk.git
 $ cd sdk
 $ ./autogen.sh
-$ PYTHON_VERSION=3.6 ./configure \
+$ PYTHON_VERSION=3.7 ./configure \
     --disable-silent-rules \
     --enable-python \
     --disable-examples \

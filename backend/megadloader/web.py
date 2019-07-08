@@ -1,3 +1,4 @@
+import atexit
 import enum
 import logging
 import pyramid.config
@@ -6,7 +7,8 @@ import pyramid.httpexceptions
 import pyramid.renderers
 import pyramid.response
 import pyramid.static
-import signal
+import subprocess
+import sys
 import uuid
 
 from megadloader import decode_url
@@ -15,17 +17,51 @@ from megadloader.processor import DownloadProcessor
 
 
 def main(global_config, **settings):
-    config = pyramid.config.Configurator(settings=settings)
+    config = pyramid.config.Configurator(settings={**settings, **global_config})
 
     config.include(_api)
     config.include(_cors)
     config.include(_db)
     config.include(_log)
-    config.include(_renderers)
     config.include(_processor)
+    config.include(_renderers)
     config.include(_static)
 
     return config.make_wsgi_app()
+
+
+PROCESSOR_KEY = '--processor-key--'
+
+
+def _processor(config: pyramid.config.Configurator):
+    from megadloader import processor
+    processor_id = str(uuid.uuid4())
+
+    config_name = config.registry.settings['__file__']
+
+    process = subprocess.Popen(
+        args=[
+            sys.executable,
+            processor.__file__,
+            '--processor-id', processor_id,
+            '--config', config_name,
+            '--app-name', 'main',
+        ],
+    )
+
+    config.registry[PROCESSOR_KEY] = process
+
+    config.add_request_method(
+        name='processor_id',
+        callable=lambda r: processor_id,
+        reify=True,
+    )
+
+    atexit.register(_kill_processor, process)
+
+
+def _kill_processor(process: subprocess.Popen):
+    process.kill()
 
 
 def _cors(config: pyramid.config.Configurator):
@@ -50,7 +86,7 @@ def cors_tween_factory(handler, registry):
 
 
 def _log(config: pyramid.config.Configurator):
-    logging.basicConfig()
+    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 
     config.add_tween('megadloader.web.log_tween_factory')
 
@@ -135,29 +171,6 @@ def _db_factory(request):
     return db
 
 
-def _processor(config: pyramid.config.Configurator):
-    processor_id = str(uuid.uuid4())[:6]
-
-    processor = DownloadProcessor(
-        destination=config.registry.settings['destination'],
-        processor_id=processor_id,
-    )
-    processor.start()
-
-    def bye(*args, **kwargs):
-        processor.stop()
-        exit(0)
-
-    signal.signal(signal.SIGINT, bye)
-
-    config.add_request_method(
-        lambda request: processor_id, 'processor_id', reify=True,
-    )
-    config.add_request_method(
-        lambda request: processor, 'processor', reify=True,
-    )
-
-
 def _static(config: pyramid.config.Configurator):
     config.add_route(name='index', path='/*subpath')
     config.add_view(
@@ -171,12 +184,7 @@ def _static(config: pyramid.config.Configurator):
 
 def handle_status(request):
     db: Db = request.db
-    processor: DownloadProcessor = request.processor
-
-    return {
-        'status': processor.status,
-        'urls': [url for url in db.get_urls()],
-    }
+    return {'urls': [url for url in db.get_urls()]}
 
 
 def handle_add_url(request):

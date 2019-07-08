@@ -1,5 +1,7 @@
+import click
+import configparser
 import enum
-
+import logging
 import mega
 import os
 import threading
@@ -8,10 +10,34 @@ import typing
 import uuid
 
 from megadloader import suppress_errors, threadlocal
-from megadloader.db import Db
+from megadloader.db import Db, configure_db
 from megadloader.models import File, Url, UrlStatus
 
 MegaHandle = int
+
+
+@click.command()
+@click.option('--processor-id')
+@click.option('--config', default='app.ini', type=click.Path(exists=True, dir_okay=False))
+@click.option('--app-name', default='main')
+def cli(processor_id, config, app_name):
+    if processor_id is None:
+        processor_id = str(uuid.uuid4())
+
+    parser = configparser.ConfigParser()
+    parser.read(config)
+
+    settings = parser[f'app:{app_name}']
+    destination = settings['destination']
+
+    configure_db(settings)
+
+    processor = DownloadProcessor(destination, processor_id)
+
+    try:
+        processor.run()
+    except KeyboardInterrupt:
+        pass
 
 
 class NodeWrapper:
@@ -48,13 +74,12 @@ def set_processor_status(status):
     return wrapper
 
 
-class DownloadProcessor(threading.Thread):
+class DownloadProcessor:
     def __init__(self, destination, processor_id):
-        super().__init__(name='DownloadQueueProcessor', daemon=False)
-
         self.api = mega.MegaApi('vIJE2YwK')
         self.destination = destination
         self.event = threading.Event()
+        self.log = logging.getLogger('processor')
         self.status = ProcessorStatus.IDLE
         self.processor_id = processor_id
 
@@ -70,9 +95,8 @@ class DownloadProcessor(threading.Thread):
         return self._files
 
     def run(self):
-        # self.api.fastLogin()
-
         self.status = ProcessorStatus.SCANNING
+
         self._clean_broken_transfers()
         self._verify_files()
 
@@ -82,23 +106,32 @@ class DownloadProcessor(threading.Thread):
             try:
                 did_work = self._loop()
                 if not did_work:
+                    self.log.info('sleeping ... ')
                     time.sleep(.1)
-            except Exception as e:
-                print(f"PROCESSOR ERROR: {e}")
+                    continue
+
+            except Exception:
+                self.log.error(f"PROCESSOR ERROR:")
                 time.sleep(1)
 
         self.db.dispose()
 
     @set_processor_status(ProcessorStatus.REAPING)
     def _clean_broken_transfers(self):
+        self.log.info('start cleaning broken transfers')
+
         for root, dir, files in os.walk(self.destination):
             for file in files:
                 if file.endswith('.mega'):
                     if file.startswith('.getxfer.'):
                         os.unlink(os.path.join(root, file))
 
+        self.log.info('cleaning done')
+
     @set_processor_status(ProcessorStatus.SCANNING)
     def _verify_files(self):
+        self.log.info('verifying files')
+
         for url in self.db.get_urls():
             done = True
 
@@ -115,7 +148,10 @@ class DownloadProcessor(threading.Thread):
                 print(f'--- resetting url {url.url} ---')
                 self.db.update_url(url, self.processor_id, UrlStatus.idle)
 
+        self.log.info('done verifying files')
+
     def _loop(self):
+        self.log.info('looping through files')
         if self._files:
             file = self._files.pop(0)
             self.current_file_id = file.file_model.id
@@ -145,6 +181,8 @@ class DownloadProcessor(threading.Thread):
 
     def _handle_listener_error(self, url_model, listener):
         if listener.error is not None:
+            self.log.warning(f'got an error: {listener.error}')
+
             self.db.update_url(
                 url_model, self.processor_id, UrlStatus.error,
                 str(listener.error),
@@ -156,9 +194,11 @@ class DownloadProcessor(threading.Thread):
     @set_processor_status(ProcessorStatus.INDEXING)
     @suppress_errors
     def _process_url(self, url_model):
+        self.log.info('processing url ...')
         self.db.update_url(url_model, self.processor_id, UrlStatus.processing)
 
         if url_model.is_file:
+            self.log.info('get public node')
             listener = PublicFolderListener(
                 f'getPublicNode("{url_model.url}")',
             )
@@ -170,12 +210,14 @@ class DownloadProcessor(threading.Thread):
             root_node = listener.public_node
             processor = self._process_file_node
         else:
+            self.log.info('getting folder')
             listener = LogListener(f'loginToFolder("{url_model.url}")')
             self.api.loginToFolder(url_model.url, listener)
             listener.wait()
             if self._handle_listener_error(url_model, listener):
                 return
 
+            self.log.info('fetch nodes')
             listener = LogListener('fetch nodes')
             self.api.fetchNodes(listener)
             listener.wait()
@@ -183,12 +225,15 @@ class DownloadProcessor(threading.Thread):
                 return
 
             root_node = self.api.getRootNode()
+            self.log.info(f'got a root node: {root_node}')
             processor = self._process_folder_node
 
         dirs = (url_model.category,) if url_model.category else tuple()
         processor(url_model, root_node, *dirs)
 
     def _process_file_node(self, url_model, node: mega.MegaNode, *directories):
+        self.log.info('creating file in db')
+
         fname = os.path.join(
             self.destination,
             *directories,
@@ -200,6 +245,7 @@ class DownloadProcessor(threading.Thread):
         self._files.append(wrapper)
 
     def _process_folder_node(self, url_model: Url, dir_node, *directories):
+        self.log.info('processing folder node')
         curdir = dir_node.getName()
 
         lists: mega.MegaChildrenLists = \
@@ -219,7 +265,7 @@ class DownloadProcessor(threading.Thread):
     @suppress_errors
     def _download_file(self, wrapper: NodeWrapper):
         if wrapper.file_model.is_finished:
-            print(f'finished with {wrapper.file_model.path}')
+            self.log.info(f'finished with {wrapper.file_model.path}')
             return
 
         fpath = os.path.dirname(wrapper.path)
@@ -227,15 +273,18 @@ class DownloadProcessor(threading.Thread):
 
         file_listener = FileListener(wrapper.file_model.id, self)
 
+        self.log.info('marking file as in process')
         self.db.mark_file_status(wrapper.file_model.id, True)
 
+        self.log.info('starting download ...')
         self.api.startDownload(
             wrapper.file_node, localPath=wrapper.path, listener=file_listener,
         )
-
         file_listener.wait()
 
+        self.log.info('marking file as downloaded')
         self.db.mark_file_status(wrapper.file_model.id, False)
+        self.log.info('done downloading file')
 
 
 class FileListener(mega.MegaTransferListener):
@@ -313,7 +362,7 @@ class LogListener(mega.MegaRequestListener):
 
         self.prefix = prefix
         self.event = threading.Event()
-        self.error: mega.MegaError = None
+        self.error: typing.Optional[mega.MegaError] = None
 
     def onRequestStart(self, api: mega.MegaApi, request: mega.MegaRequest):
         print(f'{self.prefix} onRequestStart: {request}')
@@ -351,3 +400,7 @@ class PublicFolderListener(LogListener):
             self.public_node = request.getPublicMegaNode()
 
         super().onRequestFinish(api, request, e)
+
+
+if __name__ == '__main__':
+    cli()
