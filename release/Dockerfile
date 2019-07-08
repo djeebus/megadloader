@@ -7,45 +7,47 @@ ARG MEGASDK_VERSION
 
 WORKDIR /wheels
 
-RUN apk add --no-cache git
-RUN git clone https://github.com/meganz/sdk.git /sdk
-
-RUN apk add --no-cache \
-    autoconf automake libtool \
-    'python3<3.7' \
-    python3-dev
-
 RUN apk add --no-cache \
     --repository http://dl-3.alpinelinux.org/alpine/edge/testing/ \
+    autoconf \
+    automake \
     c-ares-dev \
     crypto++-dev \
     curl-dev \
     file \
     freeimage-dev \
     g++ \
+    git \
     make \
-    libsodium-dev \
     libressl2.7-libcrypto \
+    libsodium-dev \
     libssl1.1 \
+    libtool \
+    python3 \
+    python3-dev \
     sqlite-dev \
     swig \
     zlib-dev
 
 RUN \
-    cd /sdk && \
-    git checkout v${MEGASDK_VERSION} && \
-    ./autogen.sh && \
-    PYTHON_VERSION=3.6 ./configure \
+    git clone \
+        --depth 1 \
+        --branch v${MEGASDK_VERSION} \
+        https://github.com/meganz/sdk.git \
+        /sdk \
+    && cd /sdk \
+    && git checkout v${MEGASDK_VERSION} \
+    && ./autogen.sh \
+    && PYTHON_VERSION=3.6 ./configure \
         --disable-silent-rules \
         --enable-python \
         --disable-examples \
-        --with-python3 && \
-    make && \
-    cd bindings/python/ && \
-    python3.6 -m pip install wheel && \
-    python3.6 setup.py bdist_wheel
-
-RUN cp /sdk/bindings/python/dist/megasdk-${MEGASDK_VERSION}-py2.py3-none-any.whl /wheels
+        --with-python3 \
+    && make \
+    && cd bindings/python/ \
+    && python3.6 -m pip install wheel \
+    && python3.6 setup.py bdist_wheel \
+    && cp /sdk/bindings/python/dist/megasdk-${MEGASDK_VERSION}-py2.py3-none-any.whl /wheels
 
 ADD reqs.txt /wheels
 

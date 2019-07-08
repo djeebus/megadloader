@@ -14,7 +14,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null && pwd )"
 cd ${DIR}/../ && yarn run build:release
 
 # build backend assets
-cd ${DIR}/.. && VERSION=${VERSION} python3.6 setup.py bdist_wheel
+echo ${VERSION} > ${DIR}/../VERSION
+cd ${DIR}/.. && VERSION=${VERSION} python setup.py bdist_wheel
 
 # copy backend reqs
 cp ${DIR}/../reqs.txt ${DIR}/app.ini ${DIR}/../dist/

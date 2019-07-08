@@ -1,3 +1,4 @@
+import logging
 import mega
 import sqlalchemy
 import sqlalchemy.ext.declarative
@@ -21,6 +22,7 @@ def configure_db(settings):
 
 class Db:
     def __init__(self):
+        self.log = logging.getLogger('db')
         self.session = DBSession()
 
     def add_url(self, url, category=None) -> Url:
@@ -28,6 +30,7 @@ class Db:
         if model is not None:
             return model
 
+        self.log.info(f'creating url {url} @ {category}')
         model = Url(url=url, category=category)
         self.session.add(model)
         self.session.commit()
@@ -81,6 +84,7 @@ class Db:
         for file in files:
             return file
 
+        self.log.info(f'creating file from {fname}')
         file_model = File(
             url_id=url_model.id,
             path=fname,

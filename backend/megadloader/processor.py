@@ -2,8 +2,10 @@ import click
 import configparser
 import enum
 import logging
+import logging.config
 import mega
 import os
+import queue
 import threading
 import time
 import typing
@@ -21,6 +23,8 @@ MegaHandle = int
 @click.option('--config', default='app.ini', type=click.Path(exists=True, dir_okay=False))
 @click.option('--app-name', default='main')
 def cli(processor_id, config, app_name):
+    logging.config.fileConfig(config)
+
     if processor_id is None:
         processor_id = str(uuid.uuid4())
 
@@ -82,6 +86,7 @@ class DownloadProcessor:
         self.log = logging.getLogger('processor')
         self.status = ProcessorStatus.IDLE
         self.processor_id = processor_id
+        self._updates = queue.Queue()
 
         self.current_file_id = None
         self._files: typing.List[NodeWrapper] = []
@@ -120,7 +125,7 @@ class DownloadProcessor:
     def _clean_broken_transfers(self):
         self.log.info('start cleaning broken transfers')
 
-        for root, dir, files in os.walk(self.destination):
+        for root, dirname, files in os.walk(self.destination):
             for file in files:
                 if file.endswith('.mega'):
                     if file.startswith('.getxfer.'):
@@ -152,6 +157,7 @@ class DownloadProcessor:
 
     def _loop(self):
         self.log.info('looping through files')
+
         if self._files:
             file = self._files.pop(0)
             self.current_file_id = file.file_model.id
@@ -225,15 +231,12 @@ class DownloadProcessor:
                 return
 
             root_node = self.api.getRootNode()
-            self.log.info(f'got a root node: {root_node}')
             processor = self._process_folder_node
 
         dirs = (url_model.category,) if url_model.category else tuple()
         processor(url_model, root_node, *dirs)
 
     def _process_file_node(self, url_model, node: mega.MegaNode, *directories):
-        self.log.info('creating file in db')
-
         fname = os.path.join(
             self.destination,
             *directories,
@@ -271,16 +274,30 @@ class DownloadProcessor:
         fpath = os.path.dirname(wrapper.path)
         os.makedirs(fpath, exist_ok=True)
 
-        file_listener = FileListener(wrapper.file_model.id, self)
+        file_listener = FileListener()
 
         self.log.info('marking file as in process')
         self.db.mark_file_status(wrapper.file_model.id, True)
 
-        self.log.info('starting download ...')
+        self.log.info(f'starting to download {wrapper.file_model.path} ...')
         self.api.startDownload(
             wrapper.file_node, localPath=wrapper.path, listener=file_listener,
         )
-        file_listener.wait()
+        while True:
+            try:
+                self.log.info('waiting for transfer ... ')
+                done = file_listener.wait(1)
+
+                # this has to be done here and not in the FileListener, as that gets
+                # activated on different threads and makes sqlalchemy+sqlite very sad
+                transfer = file_listener.transfer_info
+                self.db.update_file_node(wrapper.file_model, transfer)
+
+                if done:
+                    break
+
+            except:
+                self.log.exception('failed to wait for transfer')
 
         self.log.info('marking file as downloaded')
         self.db.mark_file_status(wrapper.file_model.id, False)
@@ -288,43 +305,22 @@ class DownloadProcessor:
 
 
 class FileListener(mega.MegaTransferListener):
-    def __init__(
-        self, file_model_id, queue: DownloadProcessor,
-    ):
+    def __init__(self):
         self._vars = threading.local()
-        self.file_model_id = file_model_id
-
+        self.transfer_info = None
         self.event = threading.Event()
-        self.queue = queue
 
         super().__init__()
 
-    @property
-    @threadlocal
-    def db(self):
-        return Db()
-
-    @property
-    @threadlocal
-    def file_model(self):
-        return self.db.get_file(self.file_model_id)
-
     def _update(self, transfer: typing.Optional[mega.MegaTransfer]):
-        file_model = self.file_model
-        if file_model is None:
-            self.queue.api.cancelTransfer(
-                transfer, LogListener('cancelTransfer'),
-            )
-            return
-
-        self.db.update_file_node(file_model, transfer)
+        self.transfer_info = transfer
 
     @suppress_errors
     def onTransferStart(
         self, api: mega.MegaApi,
         transfer: mega.MegaTransfer,
     ):
-        self._update(transfer)
+        self.transfer_info = transfer
 
     @suppress_errors
     def onTransferFinish(
@@ -352,8 +348,8 @@ class FileListener(mega.MegaTransferListener):
     ) -> bool:
         return True
 
-    def wait(self):
-        self.event.wait()
+    def wait(self, timeout):
+        return self.event.wait(timeout)
 
 
 class LogListener(mega.MegaRequestListener):
