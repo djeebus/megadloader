@@ -1,4 +1,3 @@
-import os
 from setuptools import setup
 
 setup(
@@ -20,7 +19,8 @@ setup(
     url="https://github.com/djeebus/megadloader",
 
     install_requires=[
-        'megasdk',
+        'click',
+        # 'megasdk',
         'pyramid',
         'sqlalchemy',
         'waitress',
@@ -28,7 +28,10 @@ setup(
 
     description="megadloader is a demon for download public links from http://mega.co.nz",
 
-    entry_points = {
+    entry_points={
+        'console_scripts': [
+            'megadloader = megadloader.cli:cli',
+        ],
         'paste.app_factory': [
             'main = megadloader.web:main',
         ],

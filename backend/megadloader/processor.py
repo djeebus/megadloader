@@ -1,6 +1,7 @@
 import enum
 
 import mega
+import multiprocessing
 import os
 import threading
 import time
@@ -48,7 +49,7 @@ def set_processor_status(status):
     return wrapper
 
 
-class DownloadProcessor(threading.Thread):
+class DownloadProcessor(multiprocessing.Process):
     def __init__(self, destination, processor_id):
         super().__init__(name='DownloadQueueProcessor', daemon=False)
 
@@ -351,3 +352,64 @@ class PublicFolderListener(LogListener):
             self.public_node = request.getPublicMegaNode()
 
         super().onRequestFinish(api, request, e)
+
+
+class UrlProcessor:
+    def __init__(self, api: mega.MegaApi):
+        self.api = api
+
+    def _is_file(self, url: str):
+        index = url.index('#')
+        if index == -1:
+            return False
+
+        return url[index + 1] != 'F'
+
+    def _handle_listener_error(self, url, listener):
+        if listener.error is not None:
+            raise Exception(url, str(listener.error))
+
+    def process(self, url) -> list:
+        if self._is_file(url):
+            yield self._process_file(url)
+        else:
+            yield from self._process_folder(url)
+
+    def _process_file(self, url):
+        listener = PublicFolderListener(
+            f'getPublicNode("{url}")',
+        )
+        self.api.getPublicNode(url, listener)
+        listener.wait()
+        self._handle_listener_error(url, listener)
+
+        return listener.public_node
+
+    def _process_folder(self, url):
+        listener = LogListener(f'loginToFolder("{url}")')
+        self.api.loginToFolder(url, listener)
+        listener.wait()
+        self._handle_listener_error(url, listener)
+
+        listener = LogListener('fetch nodes')
+        self.api.fetchNodes(listener)
+        listener.wait()
+        self._handle_listener_error(url, listener)
+
+        dir_node = self.api.getRootNode()
+
+        yield from self._process_folder_node(dir_node)
+
+    def _process_folder_node(self, dir_node):
+        lists: mega.MegaChildrenLists = \
+            self.api.getFileFolderChildren(dir_node)
+
+        files: mega.MegaNodeList = lists.getFileList()
+        for index in range(files.size()):
+            file_node: mega.MegaNode = files.get(index)
+            yield file_node
+
+        folders: mega.MegaNodeList = lists.getFolderList()
+        for index in range(folders.size()):
+            folder: mega.MegaNode = folders.get(index)
+            yield from self._process_folder_node(folder)
