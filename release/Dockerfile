@@ -35,21 +35,21 @@ RUN \
     cd /sdk && \
     git checkout v${MEGASDK_VERSION} && \
     ./autogen.sh && \
-    PYTHON_VERSION=3.6 ./configure \
+    PYTHON_VERSION=3.7 ./configure \
         --disable-silent-rules \
         --enable-python \
         --disable-examples \
         --with-python3 && \
     make && \
     cd bindings/python/ && \
-    python3.6 -m pip install wheel && \
-    python3.6 setup.py bdist_wheel
+    python3.7 -m pip install wheel && \
+    python3.7 setup.py bdist_wheel
 
 RUN cp /sdk/bindings/python/dist/megasdk-${MEGASDK_VERSION}-py2.py3-none-any.whl /wheels
 
 ADD reqs.txt /wheels
 
-RUN python3.6 -m pip wheel \
+RUN python3.7 -m pip wheel \
     --no-cache-dir --disable-pip-version-check \
     -r /wheels/reqs.txt
 
@@ -75,14 +75,14 @@ RUN apk add --no-cache \
 
 # not sure why this is necessary :(
 RUN ln -s /usr/lib/libcryptopp.so /usr/lib/libcryptopp.so.5.6
-RUN ln -s /usr/lib/python3.6/site-packages/mega/libmega.so /usr/lib/libmega.so.30407
+RUN ln -s /usr/lib/python3.7/site-packages/mega/libmega.so /usr/lib/libmega.so.30407
 
-RUN python3.6 -m pip install --no-index --find-links /wheels/ \
+RUN python3.7 -m pip install --no-index --find-links /wheels/ \
     -r /wheels/reqs.txt /wheels/megasdk-${MEGASDK_VERSION}-py2.py3-none-any.whl
 
 ADD megadloader-${VERSION}-py3-none-any.whl /wheels
 
-RUN python3.6 -m pip install --no-index /wheels/megadloader-${VERSION}-py3-none-any.whl
+RUN python3.7 -m pip install --no-index /wheels/megadloader-${VERSION}-py3-none-any.whl
 
 RUN mkdir /config
 ADD app.ini /config/

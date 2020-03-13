@@ -36,9 +36,9 @@ backend:flake8:
   stage: stage-1
   image: ubuntu:18.04
   script:
-    - apt update && apt install -y python3.6 python3-pip
-    - python3.6 -m venv .env && . .env/bin/activate
-    - python3.6 -m pip install --upgrade pip setuptools wheel flake8
+    - apt update && apt install -y python3.7 python3-pip
+    - python3.7 -m venv .env && . .env/bin/activate
+    - python3.7 -m pip install --upgrade pip setuptools wheel flake8
     - flake8 backend/ --ignore E722
 
 build:wheel:
@@ -47,13 +47,13 @@ build:wheel:
   dependencies:
     - frontend
   script:
-    - apt update && apt install -y python3.6 python3-pip
-    - python3.6 -m venv .env && . .env/bin/activate
-    - python3.6 -m pip install --upgrade pip setuptools wheel
-    - python3.6 setup.py bdist_wheel
+    - apt update && apt install -y python3.7 python3-pip
+    - python3.7 -m venv .env && . .env/bin/activate
+    - python3.7 -m pip install --upgrade pip setuptools wheel
+    - python3.7 setup.py bdist_wheel
 
     # have to compile mega sdk, don't wanna just yet
-    # - python3.6 -m pip install dist/*.whl pytest
+    # - python3.7 -m pip install dist/*.whl pytest
     # - py.test tests/
   artifacts:
     paths:
