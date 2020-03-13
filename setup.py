@@ -29,6 +29,9 @@ setup(
     description="megadloader is a demon for download public links from http://mega.co.nz",
 
     entry_points={
+        'console_scripts': [
+            'megadloader = megadloader.cli:cli',
+        ],
         'paste.app_factory': [
             'main = megadloader.web:main',
         ],

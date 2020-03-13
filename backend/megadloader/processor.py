@@ -1,9 +1,11 @@
 import click
 import configparser
+import datetime
 import enum
 import logging
 import logging.config
 import mega
+import multiprocessing
 import os
 import queue
 import threading
@@ -11,7 +13,11 @@ import time
 import typing
 import uuid
 
-from megadloader import suppress_errors, threadlocal
+from megadloader import (
+    suppress_errors,
+    threadlocal,
+    MEGA_API_KEY,
+)
 from megadloader.db import Db, configure_db
 from megadloader.models import File, Url, UrlStatus
 
@@ -78,8 +84,9 @@ def set_processor_status(status):
     return wrapper
 
 
-class DownloadProcessor:
-    def __init__(self, destination, processor_id):
+class DownloadProcessor(multiprocessing.Process):
+        super().__init__(name='DownloadQueueProcessor', daemon=False)
+
         self.api = mega.MegaApi('vIJE2YwK')
         self.destination = destination
         self.event = threading.Event()
@@ -203,66 +210,19 @@ class DownloadProcessor:
         self.log.info('processing url ...')
         self.db.update_url(url_model, self.processor_id, UrlStatus.processing)
 
-        if url_model.is_file:
-            self.log.info('get public node')
-            listener = PublicFolderListener(
-                f'getPublicNode("{url_model.url}")',
-            )
-            self.api.getPublicNode(url_model.url, listener)
-            listener.wait()
-            if self._handle_listener_error(url_model, listener):
-                return
+        processor = UrlProcessor(self.api)
+        results = processor.process(url_model.url)
+        for fname, node in results:
+            self._process_file_node(url_model, node, fname)
 
-            root_node = listener.public_node
-            processor = self._process_file_node
-        else:
-            self.log.info('getting folder')
-            listener = LogListener(f'loginToFolder("{url_model.url}")')
-            self.api.loginToFolder(url_model.url, listener)
-            listener.wait()
-            if self._handle_listener_error(url_model, listener):
-                return
-
-            self.log.info('fetch nodes')
-            listener = LogListener('fetch nodes')
-            self.api.fetchNodes(listener)
-            listener.wait()
-            if self._handle_listener_error(url_model, listener):
-                return
-
-            root_node = self.api.getRootNode()
-            processor = self._process_folder_node
-
-        dirs = (url_model.category,) if url_model.category else tuple()
-        processor(url_model, root_node, *dirs)
-
-    def _process_file_node(self, url_model, node: mega.MegaNode, *directories):
-        fname = os.path.join(
-            self.destination,
-            *directories,
-            node.getName(),
-        )
+    def _process_file_node(self, url_model, node: mega.MegaNode, fname):
+        if url_model.category:
+            fname = os.path.join(url_model.category, fname)
+        fname = os.path.join(self.destination, fname)
 
         file_model = self.db.create_file(url_model, node, fname)
         wrapper = NodeWrapper(uuid.uuid4(), fname, node, file_model)
         self._files.append(wrapper)
-
-    def _process_folder_node(self, url_model: Url, dir_node, *directories):
-        self.log.info('processing folder node')
-        curdir = dir_node.getName()
-
-        lists: mega.MegaChildrenLists = \
-            self.api.getFileFolderChildren(dir_node)
-
-        files: mega.MegaNodeList = lists.getFileList()
-        for index in range(files.size()):
-            file_node: mega.MegaNode = files.get(index)
-            self._process_file_node(url_model, file_node, *directories, curdir)
-
-        folders: mega.MegaNodeList = lists.getFolderList()
-        for index in range(folders.size()):
-            folder: mega.MegaNode = folders.get(index)
-            self._process_folder_node(url_model, folder, *directories, curdir)
 
     @set_processor_status(ProcessorStatus.DOWNLOADING)
     @suppress_errors
@@ -271,37 +231,67 @@ class DownloadProcessor:
             self.log.info(f'finished with {wrapper.file_model.path}')
             return
 
-        fpath = os.path.dirname(wrapper.path)
-        os.makedirs(fpath, exist_ok=True)
-
-        file_listener = FileListener()
-
-        self.log.info('marking file as in process')
         self.db.mark_file_status(wrapper.file_model.id, True)
 
-        self.log.info(f'starting to download {wrapper.file_model.path} ...')
-        self.api.startDownload(
-            wrapper.file_node, localPath=wrapper.path, listener=file_listener,
-        )
-        while True:
-            try:
-                self.log.info('waiting for transfer ... ')
-                done = file_listener.wait(1)
+        file_listener = DbFileListener(wrapper.file_model.id, self)
+        downloader = FileNodeDownloader(self.api)
+        downloader.download(wrapper.path, wrapper.file_node, file_listener)
 
-                # this has to be done here and not in the FileListener, as that gets
-                # activated on different threads and makes sqlalchemy+sqlite very sad
-                transfer = file_listener.transfer_info
-                self.db.update_file_node(wrapper.file_model, transfer)
+        file_listener.wait()
 
-                if done:
-                    break
-
-            except:
-                self.log.exception('failed to wait for transfer')
-
-        self.log.info('marking file as downloaded')
         self.db.mark_file_status(wrapper.file_model.id, False)
         self.log.info('done downloading file')
+
+
+SECONDS_IN_MINUTE = 60
+MINUTES_IN_HOUR = 60
+HOURS_IN_DAY = 24
+SECONDS_IN_HOUR = MINUTES_IN_HOUR * SECONDS_IN_MINUTE
+SECONDS_IN_DAY = HOURS_IN_DAY * SECONDS_IN_HOUR
+
+
+def _format_delta(diff: datetime.timedelta):
+    diff = int(diff.total_seconds())
+    d, remainder = divmod(diff, SECONDS_IN_DAY)
+    h, remainder = divmod(diff, SECONDS_IN_HOUR)
+    m, s = divmod(remainder, SECONDS_IN_MINUTE)
+
+    if d > 0:
+        return f'{d}d {h}h {m}m {s}s'
+
+    if h > 0:
+        return f'{h}h {m}m {s}s'
+
+    if m > 0:
+        return f'{m}m {s}s'
+
+    return str(s) + 's'
+
+
+class ProgressTimer:
+    def __init__(self, total):
+        self.total = total
+        self._completed = 0
+        self._start = time.time()
+
+    def progress(self, completed):
+        if completed == 0:
+            return
+
+        self._completed = completed
+
+        elapsed = time.time() - self._start
+        elapsed_per = elapsed / self._completed
+        total_time = elapsed_per * self.total
+        remaining_time = total_time - elapsed
+
+        total = datetime.timedelta(seconds=total_time)
+        elapsed = datetime.timedelta(seconds=elapsed)
+        remaining = datetime.timedelta(seconds=remaining_time)
+        progress = map(_format_delta, (elapsed, remaining, total))
+        progress = ' / '.join(progress)
+
+        click.echo(f'{self._completed}/{self.total} ({progress})')
 
 
 class FileListener(mega.MegaTransferListener):
@@ -398,5 +388,88 @@ class PublicFolderListener(LogListener):
         super().onRequestFinish(api, request, e)
 
 
-if __name__ == '__main__':
-    cli()
+class UrlProcessor:
+    def __init__(self, api: mega.MegaApi):
+        self.api = api
+
+    def _is_file(self, url: str):
+        index = url.index('#')
+        if index == -1:
+            return False
+
+        return url[index + 1] != 'F'
+
+    def _handle_listener_error(self, url, listener):
+        if listener.error is not None:
+            raise Exception(url, str(listener.error))
+
+    def process(self, url) -> list:
+        directories = tuple()
+
+        if self._is_file(url):
+            yield self._process_file(url, directories)
+        else:
+            yield from self._process_folder(url)
+
+    def _process_file(self, url, directories):
+        listener = PublicFolderListener(
+            f'getPublicNode("{url}")',
+        )
+        self.api.getPublicNode(url, listener)
+        listener.wait()
+        self._handle_listener_error(url, listener)
+
+        return self._process_file_node(listener.public_node, directories)
+
+    def _process_file_node(self, node, directories):
+        fname = os.path.join(
+            *directories,
+            node.getName(),
+        )
+        return fname, node
+
+    def _process_folder(self, url):
+        listener = LogListener(f'loginToFolder("{url}")')
+        self.api.loginToFolder(url, listener)
+        listener.wait()
+        self._handle_listener_error(url, listener)
+
+        listener = LogListener('fetch nodes')
+        self.api.fetchNodes(listener)
+        listener.wait()
+        self._handle_listener_error(url, listener)
+
+        dir_node = self.api.getRootNode()
+
+        yield from self._process_folder_node(dir_node, [])
+
+    def _process_folder_node(self, dir_node, directories):
+        directories = [*directories, dir_node.getName()]
+
+        lists: mega.MegaChildrenLists = \
+            self.api.getFileFolderChildren(dir_node)
+
+        files: mega.MegaNodeList = lists.getFileList()
+        for index in range(files.size()):
+            file_node: mega.MegaNode = files.get(index)
+            yield self._process_file_node(file_node, directories)
+
+        folders: mega.MegaNodeList = lists.getFolderList()
+        for index in range(folders.size()):
+            folder: mega.MegaNode = folders.get(index)
+            yield from self._process_folder_node(folder, directories)
+
+
+class FileNodeDownloader:
+    def __init__(self, api):
+        self.api = api
+
+    def download(self, fname, file_node, listener: mega.MegaTransferListener):
+        os.makedirs(
+            os.path.dirname(fname),
+            exist_ok=True,
+        )
+
+        print(f'downloading {fname}')
+        self.api.startDownload(file_node, localPath=fname, listener=listener)
+        print(f'\tdone')

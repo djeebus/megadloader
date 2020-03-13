@@ -21,17 +21,18 @@ GET /api/categories/
 - get a list of categories supported by the server
 
 POST /api/categories/ {name}
-
+zz
 
 Install mega-sdk locally
 ========================
 
 ```bash
 $ sudo apt install \
+    autoconf \
     swig libfreeimage-dev libcurl4-openssl-dev libc-ares-dev libsqlite3-dev \
     libsodium-dev libcrypto++-dev libtool libssl-dev python3.7-dev \
     python3-wheel
-$ git clone https://github.com/meganz/sdk.git
+$ git clone https://github.com/meganz/sdk.git --branch v3.5.4 --single-branch --depth 1
 $ cd sdk
 $ ./autogen.sh
 $ PYTHON_VERSION=3.7 ./configure \

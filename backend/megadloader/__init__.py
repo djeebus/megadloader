@@ -5,6 +5,7 @@ import re
 import threading
 
 logger = logging.getLogger('megadloader')
+MEGA_API_KEY = 'vIJE2YwK'
 
 
 def suppress_errors(func):
