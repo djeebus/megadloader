@@ -1,11 +1,13 @@
-import enum
-
-import datetime
-
 import click
+import configparser
+import datetime
+import enum
+import logging
+import logging.config
 import mega
 import multiprocessing
 import os
+import queue
 import threading
 import time
 import typing
@@ -16,10 +18,36 @@ from megadloader import (
     threadlocal,
     MEGA_API_KEY,
 )
-from megadloader.db import Db
+from megadloader.db import Db, configure_db
 from megadloader.models import File, Url, UrlStatus
 
 MegaHandle = int
+
+
+@click.command()
+@click.option('--processor-id')
+@click.option('--config', default='app.ini', type=click.Path(exists=True, dir_okay=False))
+@click.option('--app-name', default='main')
+def cli(processor_id, config, app_name):
+    logging.config.fileConfig(config)
+
+    if processor_id is None:
+        processor_id = str(uuid.uuid4())
+
+    parser = configparser.ConfigParser()
+    parser.read(config)
+
+    settings = parser[f'app:{app_name}']
+    destination = settings['destination']
+
+    configure_db(settings)
+
+    processor = DownloadProcessor(destination, processor_id)
+
+    try:
+        processor.run()
+    except KeyboardInterrupt:
+        pass
 
 
 class NodeWrapper:
@@ -57,14 +85,15 @@ def set_processor_status(status):
 
 
 class DownloadProcessor(multiprocessing.Process):
-    def __init__(self, destination, processor_id):
         super().__init__(name='DownloadQueueProcessor', daemon=False)
 
-        self.api = mega.MegaApi(MEGA_API_KEY)
+        self.api = mega.MegaApi('vIJE2YwK')
         self.destination = destination
         self.event = threading.Event()
+        self.log = logging.getLogger('processor')
         self.status = ProcessorStatus.IDLE
         self.processor_id = processor_id
+        self._updates = queue.Queue()
 
         self.current_file_id = None
         self._files: typing.List[NodeWrapper] = []
@@ -78,9 +107,8 @@ class DownloadProcessor(multiprocessing.Process):
         return self._files
 
     def run(self):
-        # self.api.fastLogin()
-
         self.status = ProcessorStatus.SCANNING
+
         self._clean_broken_transfers()
         self._verify_files()
 
@@ -90,23 +118,32 @@ class DownloadProcessor(multiprocessing.Process):
             try:
                 did_work = self._loop()
                 if not did_work:
+                    self.log.info('sleeping ... ')
                     time.sleep(.1)
-            except Exception as e:
-                print(f"PROCESSOR ERROR: {e}")
+                    continue
+
+            except Exception:
+                self.log.error(f"PROCESSOR ERROR:")
                 time.sleep(1)
 
         self.db.dispose()
 
     @set_processor_status(ProcessorStatus.REAPING)
     def _clean_broken_transfers(self):
-        for root, dir, files in os.walk(self.destination):
+        self.log.info('start cleaning broken transfers')
+
+        for root, dirname, files in os.walk(self.destination):
             for file in files:
                 if file.endswith('.mega'):
                     if file.startswith('.getxfer.'):
                         os.unlink(os.path.join(root, file))
 
+        self.log.info('cleaning done')
+
     @set_processor_status(ProcessorStatus.SCANNING)
     def _verify_files(self):
+        self.log.info('verifying files')
+
         for url in self.db.get_urls():
             done = True
 
@@ -123,7 +160,11 @@ class DownloadProcessor(multiprocessing.Process):
                 print(f'--- resetting url {url.url} ---')
                 self.db.update_url(url, self.processor_id, UrlStatus.idle)
 
+        self.log.info('done verifying files')
+
     def _loop(self):
+        self.log.info('looping through files')
+
         if self._files:
             file = self._files.pop(0)
             self.current_file_id = file.file_model.id
@@ -153,6 +194,8 @@ class DownloadProcessor(multiprocessing.Process):
 
     def _handle_listener_error(self, url_model, listener):
         if listener.error is not None:
+            self.log.warning(f'got an error: {listener.error}')
+
             self.db.update_url(
                 url_model, self.processor_id, UrlStatus.error,
                 str(listener.error),
@@ -164,6 +207,7 @@ class DownloadProcessor(multiprocessing.Process):
     @set_processor_status(ProcessorStatus.INDEXING)
     @suppress_errors
     def _process_url(self, url_model):
+        self.log.info('processing url ...')
         self.db.update_url(url_model, self.processor_id, UrlStatus.processing)
 
         processor = UrlProcessor(self.api)
@@ -184,7 +228,7 @@ class DownloadProcessor(multiprocessing.Process):
     @suppress_errors
     def _download_file(self, wrapper: NodeWrapper):
         if wrapper.file_model.is_finished:
-            print(f'finished with {wrapper.file_model.path}')
+            self.log.info(f'finished with {wrapper.file_model.path}')
             return
 
         self.db.mark_file_status(wrapper.file_model.id, True)
@@ -196,6 +240,7 @@ class DownloadProcessor(multiprocessing.Process):
         file_listener.wait()
 
         self.db.mark_file_status(wrapper.file_model.id, False)
+        self.log.info('done downloading file')
 
 
 SECONDS_IN_MINUTE = 60
@@ -251,89 +296,21 @@ class ProgressTimer:
 
 class FileListener(mega.MegaTransferListener):
     def __init__(self):
-        super().__init__()
-
-        self.event = threading.Event()
-        self._timer: ProgressTimer = None
-
-    @suppress_errors
-    def onTransferStart(
-        self, api: mega.MegaApi,
-        transfer: mega.MegaTransfer,
-    ):
-        print('onTransferStart')
-        self._timer = ProgressTimer(transfer.getTotalBytes())
-
-    @suppress_errors
-    def onTransferFinish(
-        self, api: mega.MegaApi,
-        transfer: mega.MegaTransfer, error: mega.MegaError,
-    ):
-        print('onTransferFinish')
-        self.event.set()
-
-    @suppress_errors
-    def onTransferUpdate(self, api: mega.MegaApi, transfer: mega.MegaTransfer):
-        print(f'onTransferUpdate')
-        self._timer.progress(transfer.getTransferredBytes())
-
-    @suppress_errors
-    def onTransferTemporaryError(
-        self, api: mega.MegaApi, transfer: mega.MegaTransfer,
-        error: mega.MegaError,
-    ):
-        print(f"onTransferTemporaryError: {error.getErrorString()}")
-
-    @suppress_errors
-    def onTransferData(
-        self, api: mega.MegaApi, transfer: mega.MegaTransfer,
-        buffer: str, size: int,
-    ) -> bool:
-        print(f"onTransferData ({buffer}, {size}, {transfer})")
-        return True
-
-    def wait(self):
-        self.event.wait()
-
-
-class DbFileListener(FileListener):
-    def __init__(
-        self, file_model_id, queue: DownloadProcessor,
-    ):
         self._vars = threading.local()
-        self.file_model_id = file_model_id
-
+        self.transfer_info = None
         self.event = threading.Event()
-        self.queue = queue
 
         super().__init__()
-
-    @property
-    @threadlocal
-    def db(self):
-        return Db()
-
-    @property
-    @threadlocal
-    def file_model(self):
-        return self.db.get_file(self.file_model_id)
 
     def _update(self, transfer: typing.Optional[mega.MegaTransfer]):
-        file_model = self.file_model
-        if file_model is None:
-            self.queue.api.cancelTransfer(
-                transfer, LogListener('cancelTransfer'),
-            )
-            return
-
-        self.db.update_file_node(file_model, transfer)
+        self.transfer_info = transfer
 
     @suppress_errors
     def onTransferStart(
         self, api: mega.MegaApi,
         transfer: mega.MegaTransfer,
     ):
-        self._update(transfer)
+        self.transfer_info = transfer
 
     @suppress_errors
     def onTransferFinish(
@@ -361,8 +338,8 @@ class DbFileListener(FileListener):
     ) -> bool:
         return True
 
-    def wait(self):
-        self.event.wait()
+    def wait(self, timeout):
+        return self.event.wait(timeout)
 
 
 class LogListener(mega.MegaRequestListener):
@@ -371,7 +348,7 @@ class LogListener(mega.MegaRequestListener):
 
         self.prefix = prefix
         self.event = threading.Event()
-        self.error: mega.MegaError = None
+        self.error: typing.Optional[mega.MegaError] = None
 
     def onRequestStart(self, api: mega.MegaApi, request: mega.MegaRequest):
         print(f'{self.prefix} onRequestStart: {request}')
